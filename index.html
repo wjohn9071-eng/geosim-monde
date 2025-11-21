@@ -3,569 +3,648 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoSim 2025: Simulation de Pays</title>
+    <title>GeoSim 2025: Ultimate</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Chakra+Petch:wght@400;600;700&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f0f9ff; }
-        .card { background-color: white; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
-        .stat-bar { height: 12px; border-radius: 9999px; overflow: hidden; background-color: #e2e8f0; }
-        .stat-bar-fill { transition: width 0.5s ease-out; height: 100%; }
-        #flagCanvas { border: 2px solid #cbd5e1; cursor: crosshair; image-rendering: pixelated; touch-action: none; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #94a3b8; border-radius: 3px; }
+        body { font-family: 'Roboto', sans-serif; background-color: #0f172a; color: #e2e8f0; user-select: none; }
+        h1, h2, h3, .font-military { font-family: 'Black Ops One', cursive; }
+        .font-tech { font-family: 'Chakra Petch', sans-serif; }
+        
+        /* UI Elements */
+        .card { background-color: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); }
+        .btn { transition: all 0.2s; transform: scale(1); cursor: pointer; }
+        .btn:active { transform: scale(0.95); }
+        .btn-primary { background: linear-gradient(to bottom, #2563eb, #1d4ed8); border-bottom: 4px solid #1e3a8a; }
+        .btn-danger { background: linear-gradient(to bottom, #dc2626, #b91c1c); border-bottom: 4px solid #7f1d1d; }
+        .btn-success { background: linear-gradient(to bottom, #16a34a, #15803d); border-bottom: 4px solid #14532d; }
+        
+        /* Stats Bars */
+        .stat-bar { height: 12px; border-radius: 4px; overflow: hidden; background-color: #0f172a; border: 1px solid #475569; }
+        .stat-bar-fill { height: 100%; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Canvas */
+        #flagCanvas, #flagCanvasPreview { image-rendering: pixelated; border: 2px solid #475569; cursor: crosshair; background: #000; touch-action: none; }
+        
+        /* Animations */
+        @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 5px #3b82f6; } 50% { box-shadow: 0 0 20px #3b82f6; } }
+        .glow { animation: pulse-glow 2s infinite; }
+        .hidden { display: none !important; }
     </style>
 </head>
-<body class="p-4 md:p-8 min-h-screen text-slate-800">
+<body class="min-h-screen flex flex-col">
 
-    <header class="text-center mb-8">
-        <h1 class="text-4xl font-black text-blue-900 tracking-tight">GeoSim 2025</h1>
-        <p class="text-lg text-blue-600 font-medium">Édition Solo & Bots (Mode Vercel)</p>
-        <div id="connectionStatus" class="mt-2 inline-block px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold">
-            Initialisation...
-        </div>
-    </header>
-
-    <main id="app" class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        <!-- Colonne 1: Votre Pays -->
-        <section class="lg:col-span-1 space-y-6">
-            <div id="authStatus" class="card p-6 border-t-4 border-blue-500">
-                <h2 class="text-2xl font-bold mb-4">Votre Nation</h2>
-                <p id="userIdDisplay" class="text-xs font-mono text-gray-400 mb-4 break-all">ID: ...</p>
-                
-                <div id="countrySetup" class="space-y-4">
-                    <input type="text" id="countryNameInput" placeholder="Nom de votre Pays" class="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none font-bold text-lg">
-                    <button id="createCountryBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg transform active:scale-95">
-                        Fonder ma Nation
-                    </button>
-                    <p id="countryStatus" class="text-sm text-red-500 font-medium"></p>
-                </div>
-
-                <!-- Stats Pays (Caché au début) -->
-                <div id="countryStats" class="hidden space-y-5 mt-4">
-                    <div class="text-center pb-4 border-b border-gray-100">
-                        <h3 class="text-3xl font-black text-blue-900" id="myCountryName">Pays</h3>
-                        <span id="allianceTag" class="inline-block mt-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded">SOLO</span>
-                    </div>
-                    
-                    <p id="conquestStatus" class="text-center font-bold text-red-600 animate-pulse"></p>
-
-                    <!-- Barres de Stats -->
-                    <div class="space-y-3">
-                        <!-- Santé -->
-                        <div>
-                            <div class="flex justify-between text-sm font-bold mb-1">
-                                <span>Santé ❤️</span>
-                                <span id="healthPercent" class="text-red-600">100%</span>
-                            </div>
-                            <div class="stat-bar"><div id="healthBar" class="stat-bar-fill bg-red-500" style="width: 100%"></div></div>
-                        </div>
-                        <!-- Économie -->
-                        <div>
-                            <div class="flex justify-between text-sm font-bold mb-1">
-                                <span>Économie 💰</span>
-                                <span id="economyValue" class="text-blue-600">0</span>
-                            </div>
-                            <div class="stat-bar"><div id="economyBar" class="stat-bar-fill bg-blue-500" style="width: 0%"></div></div>
-                        </div>
-                        <!-- Armée -->
-                        <div>
-                            <div class="flex justify-between text-sm font-bold mb-1">
-                                <span>Armée ⚔️</span>
-                                <span id="militaryValue" class="text-yellow-600">0</span>
-                            </div>
-                            <div class="stat-bar"><div id="militaryBar" class="stat-bar-fill bg-yellow-500" style="width: 0%"></div></div>
-                        </div>
-                        <!-- Stabilité -->
-                        <div>
-                            <div class="flex justify-between text-sm font-bold mb-1">
-                                <span>Stabilité ⚖️</span>
-                                <span id="stabilityValue" class="text-green-600">0</span>
-                            </div>
-                            <div class="stat-bar"><div id="stabilityBar" class="stat-bar-fill bg-green-500" style="width: 0%"></div></div>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-blue-50 p-3 rounded-lg text-center">
-                        <span class="text-sm text-blue-800 font-bold">Revenu/Tour: +<span id="incomeValue">0</span> 💰</span>
-                    </div>
-                </div>
+    <!-- ==================== MENU PRINCIPAL ==================== -->
+    <div id="screen-menu" class="flex-1 flex flex-col items-center justify-center p-4 bg-slate-900 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
+        <div class="max-w-md w-full text-center space-y-8">
+            <div>
+                <h1 class="text-6xl text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 filter drop-shadow-lg">GEOSIM</h1>
+                <p class="text-gray-400 tracking-[0.5em] text-sm mt-2">GLOBAL WARFARE</p>
             </div>
 
-            <!-- Alliance -->
-            <div id="allianceManagement" class="card p-6 hidden border-t-4 border-purple-500">
-                <h3 class="text-xl font-bold text-purple-800 mb-3">Alliances</h3>
-                <div class="flex gap-2">
-                    <input type="text" id="allianceNameInput" placeholder="Nom Alliance" class="flex-1 p-2 border border-gray-200 rounded-lg">
-                    <button id="joinAllianceBtn" class="bg-purple-600 text-white font-bold px-4 py-2 rounded-lg text-sm">Rejoindre</button>
+            <!-- Carte Profil (Sauvegardé) -->
+            <div class="card p-6 border-t-4 border-blue-500">
+                <h3 class="text-left text-xs text-blue-400 font-bold mb-2">IDENTITÉ NATIONALE</h3>
+                <div class="flex items-center gap-4 mb-4">
+                    <canvas id="menuFlagCanvas" width="60" height="40" class="border border-gray-600 shadow-lg"></canvas>
+                    <input type="text" id="globalNameInput" class="flex-1 bg-slate-800 border border-slate-600 text-white font-bold text-lg p-2 rounded focus:border-blue-500 outline-none" placeholder="Nom du Pays">
                 </div>
-                <button id="leaveAllianceBtn" class="w-full mt-2 text-gray-500 text-xs font-bold hover:text-red-500">Quitter l'alliance</button>
-            </div>
-        </section>
-
-        <!-- Colonne 2: Actions & Drapeau -->
-        <section class="lg:col-span-1 space-y-6">
-            <!-- Drapeau -->
-            <div class="card p-6 text-center">
-                <h3 class="text-lg font-bold text-gray-700 mb-3">Drapeau (15x10)</h3>
-                <div class="flex justify-center mb-3">
-                    <canvas id="flagCanvas" width="300" height="200" class="rounded shadow-sm bg-white"></canvas>
-                </div>
-                <div class="flex items-center justify-center gap-3 mb-3">
-                    <input type="color" id="colorPicker" value="#000000" class="h-10 w-10 rounded cursor-pointer border-0">
-                    <button id="clearFlagBtn" class="px-3 py-2 bg-gray-200 rounded font-bold text-sm">Gomme</button>
-                    <button id="saveFlagBtn" class="px-4 py-2 bg-blue-600 text-white rounded font-bold text-sm shadow">Sauvegarder</button>
-                </div>
+                <button onclick="openEditor()" class="text-xs text-gray-400 hover:text-white underline">Modifier le Drapeau</button>
             </div>
 
-            <!-- Actions -->
-            <div id="countryActions" class="card p-6 hidden border-t-4 border-orange-500">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-bold text-gray-800">Actions</h2>
-                    <span id="turnCounter" class="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-bold">1 Action Restante</span>
-                </div>
-
-                <div class="grid grid-cols-1 gap-3 mb-4">
-                    <button data-action="economy" class="action-btn bg-blue-50 hover:bg-blue-100 border-l-4 border-blue-500 p-3 text-left font-bold text-blue-900 transition">
-                        🏗️ Investir (+5 Éco)
-                    </button>
-                    <button data-action="stability" class="action-btn bg-green-50 hover:bg-green-100 border-l-4 border-green-500 p-3 text-left font-bold text-green-900 transition">
-                        📢 Propagande (+5 Stab)
-                    </button>
-                    <button data-action="military" class="action-btn bg-yellow-50 hover:bg-yellow-100 border-l-4 border-yellow-500 p-3 text-left font-bold text-yellow-900 transition">
-                        🛡️ Recruter (+5 Mil)
-                    </button>
-                </div>
-
-                <div class="border-t pt-4 mt-4">
-                    <label class="text-xs font-bold text-gray-500 uppercase">Zone de Guerre</label>
-                    <select id="attackTarget" class="w-full mt-1 p-2 border rounded bg-gray-50 text-sm mb-2"></select>
-                    <button data-action="attack" id="attackBtn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded shadow transition transform active:scale-95">
-                        ⚔️ ATTAQUER
-                    </button>
-                </div>
-
-                <button id="endTurnBtn" class="w-full mt-6 bg-gray-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-black transition">
-                    PASSER LE TOUR 🌙
+            <!-- Choix du Mode -->
+            <div class="space-y-4">
+                <button onclick="startSolo()" class="btn btn-primary w-full py-4 rounded-xl text-xl font-black font-tech shadow-xl glow group relative overflow-hidden">
+                    <span class="relative z-10">CAMPAGNE SOLO 👤</span>
                 </button>
-                <p id="actionFeedback" class="mt-2 text-center text-xs font-bold h-4 text-blue-600"></p>
+                
+                <button onclick="openMultiLobby()" class="btn btn-success w-full py-4 rounded-xl text-xl font-black font-tech shadow-xl group">
+                    MULTIJOUEUR (P2P) 🌐
+                </button>
             </div>
-        </section>
+            
+            <p class="text-xs text-gray-600">v3.0 Ultimate • Données Persistantes</p>
+        </div>
+    </div>
 
-        <!-- Colonne 3: Classement -->
-        <section class="lg:col-span-1">
-            <div class="card p-6 h-full max-h-[80vh] flex flex-col">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-bold text-gray-800">Monde</h2>
-                    <span id="botStatus" class="text-xs font-mono text-gray-400">Bots actifs</span>
+    <!-- ==================== ÉDITEUR DRAPEAU (MODAL) ==================== -->
+    <div id="screen-editor" class="hidden fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
+        <div class="bg-slate-800 p-6 rounded-xl border border-slate-600 max-w-sm w-full text-center">
+            <h2 class="text-2xl mb-4 text-white">Éditeur Pixel</h2>
+            <canvas id="editorCanvas" width="300" height="200" class="mx-auto mb-4 w-full shadow-2xl"></canvas>
+            <div class="flex justify-center gap-2 mb-4">
+                <input type="color" id="editorColor" value="#ff0000" class="h-10 w-10 rounded border-0 cursor-pointer">
+                <button onclick="clearEditor()" class="btn bg-gray-600 px-4 py-2 rounded text-white">Effacer</button>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="closeEditor(false)" class="flex-1 py-3 rounded text-gray-400 hover:bg-slate-700">Annuler</button>
+                <button onclick="closeEditor(true)" class="flex-1 btn btn-success py-3 rounded text-white font-bold">SAUVEGARDER</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== UI SOLO ==================== -->
+    <div id="screen-solo" class="hidden flex-1 flex flex-col p-2 md:p-4 max-w-6xl mx-auto w-full">
+        <header class="flex justify-between items-center mb-4 bg-slate-800 p-3 rounded border border-slate-700">
+            <div>
+                <button onclick="goHome()" class="text-xs text-gray-500 hover:text-white mb-1">◀ Retour Menu</button>
+                <h2 id="soloHeaderName" class="text-xl font-bold text-blue-400">Mon Pays</h2>
+            </div>
+            <div class="text-right">
+                <div class="text-sm text-gray-400">Tour <span id="soloTurn">1</span></div>
+                <div class="text-xs text-yellow-500" id="soloDiffDisplay">Normal</div>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
+            <!-- Stats Solo -->
+            <div class="card p-4 space-y-4 lg:col-span-1">
+                <div class="flex justify-between items-end">
+                    <span class="text-gray-400 text-xs uppercase font-bold">Santé Nationale</span>
+                    <span id="soloHpText" class="text-2xl font-black text-red-500">100%</span>
                 </div>
-                <div class="overflow-y-auto custom-scrollbar flex-1">
-                    <table class="w-full">
-                        <thead class="text-xs text-gray-500 bg-gray-50 sticky top-0">
-                            <tr>
-                                <th class="p-2 text-left">Nation</th>
-                                <th class="p-2 text-center">Vie</th>
-                                <th class="p-2 text-center">Puissance</th>
-                            </tr>
-                        </thead>
-                        <tbody id="countryList" class="text-sm divide-y divide-gray-100">
-                            <!-- Liste ici -->
-                        </tbody>
-                    </table>
+                <div class="h-4 bg-gray-900 rounded-full overflow-hidden border border-gray-700">
+                    <div id="soloHpBar" class="h-full bg-red-600" style="width: 100%"></div>
+                </div>
+                
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between"><span>💰 Économie</span> <span id="soloEcoVal">20</span></div>
+                    <div class="stat-bar"><div id="soloEcoBar" class="stat-bar-fill bg-blue-600" style="width: 20%"></div></div>
+                    
+                    <div class="flex justify-between"><span>🛡️ Armée</span> <span id="soloMilVal">20</span></div>
+                    <div class="stat-bar"><div id="soloMilBar" class="stat-bar-fill bg-yellow-600" style="width: 20%"></div></div>
+                    
+                    <div class="flex justify-between"><span>⚖️ Stabilité</span> <span id="soloStabVal">20</span></div>
+                    <div class="stat-bar"><div id="soloStabBar" class="stat-bar-fill bg-green-600" style="width: 20%"></div></div>
+                </div>
+                <div id="soloLog" class="h-32 bg-black/50 rounded p-2 text-xs font-mono overflow-y-auto text-gray-400 border border-slate-700"></div>
+            </div>
+
+            <!-- Actions Solo -->
+            <div class="card p-4 lg:col-span-1 flex flex-col gap-2">
+                <div class="text-center mb-2">
+                    <span id="soloActions" class="bg-blue-900 text-blue-200 px-2 py-1 rounded text-xs font-bold">1 Action</span>
+                </div>
+                <button onclick="soloAction('eco')" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-blue-500">🏗️ Investir</button>
+                <button onclick="soloAction('mil')" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-yellow-500">🛡️ Recruter</button>
+                <button onclick="soloAction('stab')" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-green-500">📢 Propagande</button>
+                
+                <div class="mt-4 pt-4 border-t border-slate-700">
+                    <select id="soloTargetSelect" class="w-full bg-slate-900 p-2 rounded mb-2 text-sm border border-slate-600"></select>
+                    <button onclick="soloAttack()" class="btn btn-danger w-full py-3 rounded font-bold">ATTAQUER</button>
+                </div>
+                
+                <button onclick="soloEndTurn()" class="btn bg-slate-800 w-full py-3 rounded font-bold mt-auto border border-slate-600 hover:bg-slate-700">Fin du Tour 🌙</button>
+            </div>
+
+            <!-- Classement Solo -->
+            <div class="card p-0 overflow-hidden lg:col-span-1 flex flex-col">
+                <div class="bg-slate-800 p-2 text-xs font-bold text-center">CLASSEMENT MONDIAL</div>
+                <div id="soloRanking" class="flex-1 overflow-y-auto divide-y divide-slate-700 bg-slate-900/50"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== UI MULTI (LOBBY & JEU) ==================== -->
+    <div id="screen-multi-lobby" class="hidden flex-1 flex flex-col items-center justify-center p-4 bg-slate-900">
+        <div class="max-w-md w-full card p-8 border-blue-500 border-2">
+            <button onclick="goHome()" class="mb-4 text-xs text-gray-500 hover:text-white">◀ Retour</button>
+            <h2 class="text-3xl text-center mb-6 text-white font-military">QUARTIER GÉNÉRAL</h2>
+            
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <button onclick="initPeer(true)" class="btn btn-primary p-4 rounded flex flex-col items-center gap-2">
+                    <span class="text-2xl">👑</span><span class="font-bold">CRÉER</span>
+                </button>
+                <button onclick="showJoinInput()" class="btn btn-success p-4 rounded flex flex-col items-center gap-2">
+                    <span class="text-2xl">⚔️</span><span class="font-bold">REJOINDRE</span>
+                </button>
+            </div>
+
+            <div id="multiJoinArea" class="hidden mb-4">
+                <div class="flex gap-2">
+                    <input type="text" id="multiHostInput" class="flex-1 bg-slate-800 border border-slate-600 p-3 rounded text-center font-mono uppercase" placeholder="CODE">
+                    <button onclick="initPeer(false)" class="bg-green-600 px-4 rounded font-bold">GO</button>
                 </div>
             </div>
-        </section>
-    </main>
 
+            <div id="multiHostArea" class="hidden text-center bg-slate-800 p-4 rounded border border-dashed border-slate-600">
+                <p class="text-gray-400 text-xs mb-2">CODE À PARTAGER :</p>
+                <div id="multiCodeDisplay" class="text-3xl font-mono font-bold text-blue-400 tracking-widest select-all cursor-pointer mb-2">...</div>
+                <p id="multiStatus" class="text-xs text-yellow-500 animate-pulse">Connexion...</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-multi-game" class="hidden flex-1 flex flex-col p-2 md:p-4 max-w-6xl mx-auto w-full">
+        <header class="flex justify-between items-center mb-4 bg-slate-800 p-3 rounded border border-blue-900">
+            <h2 class="text-xl font-bold text-blue-400 font-military">GUERRE P2P</h2>
+            <div class="text-xs text-green-400 flex items-center gap-2">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> EN LIGNE
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- Stats Multi -->
+            <div class="card p-4 space-y-4 lg:col-span-1 border-l-4 border-blue-500">
+                <h3 id="multiMyName" class="font-bold text-lg">Moi</h3>
+                <div class="h-4 bg-gray-900 rounded-full overflow-hidden">
+                    <div id="multiHpBar" class="h-full bg-red-600 transition-all" style="width: 100%"></div>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div class="bg-slate-800 p-2 rounded">💰 <span id="multiEcoVal">0</span></div>
+                    <div class="bg-slate-800 p-2 rounded">🛡️ <span id="multiMilVal">0</span></div>
+                    <div class="bg-slate-800 p-2 rounded">👁️ <span id="multiSpyVal">0</span></div>
+                </div>
+                <div id="multiLog" class="h-32 bg-black/50 rounded p-2 text-xs font-mono overflow-y-auto text-green-400 border border-slate-700"></div>
+            </div>
+
+            <!-- Actions Multi -->
+            <div class="card p-4 lg:col-span-1 space-y-2">
+                <div class="text-right mb-2"><span id="multiActions" class="text-xs font-bold bg-blue-900 px-2 py-1 rounded">Wait...</span></div>
+                <button onclick="multiSend('invest')" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-2 border-yellow-500">💰 Investir</button>
+                <button onclick="multiSend('recruit')" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-2 border-red-500">🛡️ Recruter</button>
+                <button onclick="multiSend('spy')" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-2 border-purple-500">👁️ Espionner</button>
+                
+                <div class="mt-4 pt-4 border-t border-slate-700 bg-red-900/10 p-2 rounded">
+                    <select id="multiTargetSelect" class="w-full bg-slate-900 p-2 rounded mb-2 text-sm border border-red-900"></select>
+                    <button onclick="multiSend('attack')" class="btn btn-danger w-full py-3 rounded font-bold shadow-lg">LANCER ATTAQUE</button>
+                </div>
+            </div>
+
+            <!-- Liste Multi -->
+            <div class="card p-0 lg:col-span-1 overflow-hidden">
+                <div class="bg-slate-800 p-2 text-xs font-bold text-center uppercase">Forces en Présence</div>
+                <div id="multiPlayerList" class="divide-y divide-slate-700"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== JAVASCRIPT ==================== -->
     <script>
-        // --- MOTEUR DE JEU HYBRIDE (LOCAL/MOCK) ---
-        
-        // Configuration
-        const MAX_STAT = 100;
+        // --- GESTIONNAIRE DE DONNÉES GLOBALES ---
         const FLAG_COLS = 15;
         const FLAG_ROWS = 10;
-        let userId = localStorage.getItem('geosim_userid') || 'user_' + Math.random().toString(36).substr(2, 9);
-        localStorage.setItem('geosim_userid', userId);
+        const STORAGE_KEY = 'geosim_ultimate_profile_v1';
+        const SOLO_SAVE_KEY = 'geosim_ultimate_solo_save_v1';
 
-        // État du jeu
-        let db = { countries: {} };
-        let myCountry = null;
-
-        // UI References
-        const els = {
-            status: document.getElementById('connectionStatus'),
-            userId: document.getElementById('userIdDisplay'),
-            setup: document.getElementById('countrySetup'),
-            stats: document.getElementById('countryStats'),
-            actions: document.getElementById('countryActions'),
-            alliance: document.getElementById('allianceManagement'),
-            nameInput: document.getElementById('countryNameInput'),
-            createBtn: document.getElementById('createCountryBtn'),
-            endTurnBtn: document.getElementById('endTurnBtn'),
-            feedback: document.getElementById('actionFeedback'),
-            list: document.getElementById('countryList'),
-            targetSelect: document.getElementById('attackTarget'),
-            inputs: {
-                eco: document.getElementById('economyValue'),
-                stab: document.getElementById('stabilityValue'),
-                mil: document.getElementById('militaryValue'),
-                health: document.getElementById('healthPercent'),
-                income: document.getElementById('incomeValue')
-            },
-            bars: {
-                eco: document.getElementById('economyBar'),
-                stab: document.getElementById('stabilityBar'),
-                mil: document.getElementById('militaryBar'),
-                health: document.getElementById('healthBar')
-            }
+        // Profil par défaut
+        let profile = {
+            name: "Nation " + Math.floor(Math.random()*1000),
+            flag: new Array(FLAG_COLS * FLAG_ROWS).fill('#ffffff')
         };
 
-        // --- SYSTÈME DE BOTS & SAUVEGARDE ---
+        // --- INITIALISATION ---
+        window.onload = () => {
+            loadProfile();
+            renderMenuFlag();
+        };
 
-        function loadGame() {
-            const savedData = localStorage.getItem('geosim_db');
-            if (savedData) {
-                db = JSON.parse(savedData);
-            } else {
-                // Initialiser les bots si première fois
-                initBots();
+        function loadProfile() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if(saved) {
+                const parsed = JSON.parse(saved);
+                profile.name = parsed.name || profile.name;
+                profile.flag = parsed.flag || profile.flag;
             }
-            renderGame();
+            document.getElementById('globalNameInput').value = profile.name;
         }
 
-        function saveGame() {
-            localStorage.setItem('geosim_db', JSON.stringify(db));
-            renderGame();
+        function saveProfile() {
+            profile.name = document.getElementById('globalNameInput').value || "Nation Inconnue";
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+            renderMenuFlag();
         }
 
-        function initBots() {
-            const botNames = ["Empire Alpha", "République Beta", "Royaume Gamma", "Fédération Delta", "Union Omega"];
-            const colors = [['#ff0000', '#ffffff'], ['#0000ff', '#ffff00'], ['#00ff00', '#000000'], ['#800080', '#ffa500'], ['#00ffff', '#ff00ff']];
-            
-            botNames.forEach((name, idx) => {
-                const botId = 'bot_' + idx;
-                // Générer drapeau simple
-                let flag = [];
-                for(let i=0; i<FLAG_ROWS*FLAG_COLS; i++) flag.push((i%2===0) ? colors[idx][0] : colors[idx][1]);
+        // --- ÉDITEUR DE DRAPEAU ---
+        const editorCanvas = document.getElementById('editorCanvas');
+        const eCtx = editorCanvas.getContext('2d');
+        let tempFlag = [];
 
-                db.countries[botId] = {
-                    id: botId,
-                    name: name,
-                    isBot: true,
-                    flag: JSON.stringify(flag),
-                    economy: 20 + Math.floor(Math.random()*30),
-                    stability: 30 + Math.floor(Math.random()*30),
-                    military: 10 + Math.floor(Math.random()*40),
-                    health: 100,
-                    actionsLeft: 1,
-                    alliance: null
-                };
-            });
-            saveGame();
+        function openEditor() {
+            tempFlag = [...profile.flag];
+            drawEditor();
+            document.getElementById('screen-editor').classList.remove('hidden');
         }
 
-        function runBots() {
-            Object.values(db.countries).forEach(bot => {
-                if (!bot.isBot || bot.health <= 0) return;
-
-                // IA Simple
-                if (bot.health < 50) {
-                    bot.military += 5; // Panique militaire
-                } else if (bot.economy < 40) {
-                    bot.economy += 5;
-                } else if (bot.military > 50 && Math.random() > 0.7) {
-                    // Attaque aléatoire
-                    const targets = Object.values(db.countries).filter(c => c.id !== bot.id && c.health > 0);
-                    if (targets.length > 0) {
-                        const target = targets[Math.floor(Math.random() * targets.length)];
-                        const dmg = Math.max(5, (bot.military * 0.4) - (target.military * 0.2));
-                        target.health = Math.max(0, Math.round(target.health - dmg));
-                        console.log(`${bot.name} attaque ${target.name}`);
-                    }
-                } else {
-                    // Investissement normal
-                    if (Math.random() > 0.5) bot.economy += 5;
-                    else bot.stability += 5;
-                }
-
-                // Cap stats
-                bot.economy = Math.min(100, bot.economy);
-                bot.stability = Math.min(100, bot.stability);
-                bot.military = Math.min(100, bot.military);
-            });
-            saveGame();
-        }
-
-        // --- UI & INTERACTION ---
-
-        function renderGame() {
-            // 1. Mon Pays
-            myCountry = db.countries[userId];
-            
-            if (myCountry) {
-                els.setup.classList.add('hidden');
-                els.stats.classList.remove('hidden');
-                els.actions.classList.remove('hidden');
-                els.alliance.classList.remove('hidden');
-                
-                document.getElementById('myCountryName').textContent = myCountry.name;
-                els.userId.textContent = `ID: ${userId}`;
-                
-                // Stats Update
-                updateStat('eco', myCountry.economy, 'blue');
-                updateStat('stab', myCountry.stability, 'green');
-                updateStat('mil', myCountry.military, 'yellow');
-                
-                // Health
-                els.inputs.health.textContent = myCountry.health + '%';
-                els.bars.health.style.width = myCountry.health + '%';
-                
-                if(myCountry.health <= 0) {
-                    document.getElementById('conquestStatus').textContent = "☠️ NATION DÉTRUITE ☠️";
-                    els.actions.classList.add('opacity-50', 'pointer-events-none');
-                } else {
-                    document.getElementById('conquestStatus').textContent = "";
-                    els.actions.classList.remove('opacity-50', 'pointer-events-none');
-                }
-
-                // Actions
-                document.getElementById('turnCounter').textContent = `${myCountry.actionsLeft} Action(s)`;
-                els.endTurnBtn.disabled = myCountry.actionsLeft > 0;
-                els.endTurnBtn.classList.toggle('opacity-50', myCountry.actionsLeft > 0);
-                
-                document.querySelectorAll('.action-btn').forEach(btn => {
-                    btn.disabled = myCountry.actionsLeft <= 0;
-                    btn.classList.toggle('opacity-50', myCountry.actionsLeft <= 0);
-                });
-
-                // Income
-                els.inputs.income.textContent = 10 + Math.floor(myCountry.economy / 10);
-                
-                // Drapeau
-                loadFlag(myCountry.flag);
-                
-                // Alliance
-                document.getElementById('allianceTag').textContent = myCountry.alliance || 'SOLO';
-            } else {
-                els.setup.classList.remove('hidden');
-                els.stats.classList.add('hidden');
-                els.actions.classList.add('hidden');
-                els.alliance.classList.add('hidden');
+        function closeEditor(save) {
+            if(save) {
+                profile.flag = [...tempFlag];
+                saveProfile();
             }
-
-            // 2. Liste & Cibles
-            els.list.innerHTML = '';
-            els.targetSelect.innerHTML = '';
-            
-            const sorted = Object.values(db.countries).sort((a,b) => (b.economy+b.military) - (a.economy+a.military));
-            
-            sorted.forEach(c => {
-                // Liste
-                const tr = document.createElement('tr');
-                const isMe = c.id === userId;
-                tr.className = isMe ? "bg-blue-50 font-bold border-l-4 border-blue-500" : "";
-                
-                // Mini drapeau
-                let flagCanvas = document.createElement('canvas');
-                flagCanvas.width = 30; flagCanvas.height = 20;
-                drawTinyFlag(flagCanvas, c.flag);
-
-                tr.innerHTML = `
-                    <td class="p-2 flex items-center gap-2">
-                        <div class="w-8 h-5 border bg-gray-200">${flagCanvas.outerHTML}</div>
-                        <div>
-                            <div class="${c.health<=0 ? 'line-through text-red-400' : 'text-gray-800'}">${c.name}</div>
-                            <div class="text-[10px] text-gray-400">${c.isBot ? '🤖 BOT' : '👤 JOUEUR'}</div>
-                        </div>
-                    </td>
-                    <td class="p-2 text-center font-bold ${c.health<30 ? 'text-red-600' : 'text-green-600'}">${c.health}%</td>
-                    <td class="p-2 text-center font-bold text-gray-600">${c.military}</td>
-                `;
-                els.list.appendChild(tr);
-
-                // Select Attack (Pas soi-même, pas morts, pas alliés)
-                if (!isMe && c.health > 0) {
-                    if (myCountry && myCountry.alliance && myCountry.alliance === c.alliance) return;
-                    const opt = document.createElement('option');
-                    opt.value = c.id;
-                    opt.textContent = `⚔️ ${c.name} (Mil: ${c.military})`;
-                    els.targetSelect.appendChild(opt);
-                }
-            });
-            
-            // Redessiner les drapeaux dans la liste (petit hack car outerHTML perd le contexte)
-            setTimeout(() => {
-                const rows = els.list.querySelectorAll('tr');
-                rows.forEach((row, idx) => {
-                    const country = sorted[idx];
-                    const canvas = row.querySelector('canvas'); // Il n'y en a pas dans le HTML stringifié tel quel
-                    // Pour simplifier, on ne redessine pas les canvas dans la liste dans cette version simple pour éviter complexité
-                });
-            }, 0);
+            document.getElementById('screen-editor').classList.add('hidden');
         }
 
-        function updateStat(key, val, color) {
-            els.inputs[key].textContent = val;
-            els.bars[key].style.width = val + '%';
-        }
-
-        // --- LOGIQUE JEU ---
-
-        els.createBtn.addEventListener('click', () => {
-            const name = els.nameInput.value.trim();
-            if(!name) return;
-            
-            // Init Flag
-            let flag = [];
-            for(let i=0; i<FLAG_ROWS*FLAG_COLS; i++) flag.push('#ffffff');
-
-            db.countries[userId] = {
-                id: userId,
-                name: name,
-                isBot: false,
-                flag: JSON.stringify(flag),
-                economy: 20, stability: 20, military: 20, health: 100,
-                actionsLeft: 1, alliance: null
-            };
-            saveGame();
-        });
-
-        // Actions Boutons
-        document.querySelectorAll('.action-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                if(myCountry.actionsLeft <= 0) return;
-                const act = e.target.getAttribute('data-action') || e.target.parentElement.getAttribute('data-action');
-                
-                if(act === 'economy') myCountry.economy += 5;
-                if(act === 'stability') myCountry.stability += 5;
-                if(act === 'military') myCountry.military += 5;
-
-                // Cap 100
-                myCountry.economy = Math.min(100, myCountry.economy);
-                myCountry.stability = Math.min(100, myCountry.stability);
-                myCountry.military = Math.min(100, myCountry.military);
-
-                myCountry.actionsLeft--;
-                feedback("Action effectuée !");
-                saveGame();
-            });
-        });
-
-        els.endTurnBtn.addEventListener('click', () => {
-            // Revenu
-            const income = 10 + Math.floor(myCountry.economy / 10);
-            const stabPenalty = myCountry.stability < 20 ? 10 : 0;
-            
-            myCountry.economy = Math.max(0, Math.min(100, myCountry.economy + income - stabPenalty));
-            myCountry.actionsLeft = 1;
-            
-            feedback(`Tour terminé. Revenu: +${income}`);
-            
-            // Tour des bots
-            runBots();
-            saveGame();
-        });
-
-        document.getElementById('attackBtn').addEventListener('click', () => {
-            if(myCountry.actionsLeft <= 0) return;
-            const targetId = els.targetSelect.value;
-            if(!targetId) return;
-            
-            const target = db.countries[targetId];
-            const dmg = Math.max(5, (myCountry.military * 0.5) - (target.military * 0.3));
-            
-            target.health = Math.max(0, Math.round(target.health - dmg));
-            myCountry.actionsLeft--;
-            
-            feedback(`Attaque sur ${target.name} ! -${Math.round(dmg)} PV`);
-            saveGame();
-        });
-
-        // Alliance
-        document.getElementById('joinAllianceBtn').addEventListener('click', () => {
-            const name = document.getElementById('allianceNameInput').value.trim().toUpperCase();
-            if(name) {
-                myCountry.alliance = name;
-                saveGame();
-            }
-        });
-        document.getElementById('leaveAllianceBtn').addEventListener('click', () => {
-            myCountry.alliance = null;
-            saveGame();
-        });
-
-        // --- DRAPEAU ---
-        const canvas = document.getElementById('flagCanvas');
-        const ctx = canvas.getContext('2d');
-        const pW = canvas.width / FLAG_COLS;
-        const pH = canvas.height / FLAG_ROWS;
-        let currentFlag = [];
-
-        function loadFlag(json) {
-            try { currentFlag = JSON.parse(json); } catch(e) { currentFlag = []; }
-            drawFlag();
-        }
-
-        function drawFlag() {
-            for(let r=0; r<FLAG_ROWS; r++) {
-                for(let c=0; c<FLAG_COLS; c++) {
-                    ctx.fillStyle = currentFlag[r*FLAG_COLS + c] || '#fff';
-                    ctx.fillRect(c*pW, r*pH, pW, pH);
-                    ctx.strokeStyle = '#eee';
-                    ctx.strokeRect(c*pW, r*pH, pW, pH);
-                }
+        function drawEditor() {
+            const pW = editorCanvas.width / FLAG_COLS;
+            const pH = editorCanvas.height / FLAG_ROWS;
+            for(let i=0; i<tempFlag.length; i++) {
+                const c = i % FLAG_COLS;
+                const r = Math.floor(i / FLAG_COLS);
+                eCtx.fillStyle = tempFlag[i];
+                eCtx.fillRect(c*pW, r*pH, pW, pH);
+                eCtx.strokeStyle = '#333';
+                eCtx.strokeRect(c*pW, r*pH, pW, pH);
             }
         }
 
-        // Draw Interaction
-        canvas.addEventListener('pointerdown', paint);
-        canvas.addEventListener('pointermove', (e) => { if(e.buttons) paint(e); });
-
-        function paint(e) {
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const c = Math.floor(x / pW);
-            const r = Math.floor(y / pH);
-            if(c>=0 && c<FLAG_COLS && r>=0 && r<FLAG_ROWS) {
-                currentFlag[r*FLAG_COLS + c] = document.getElementById('colorPicker').value;
-                drawFlag();
+        let isDrawing = false;
+        editorCanvas.addEventListener('pointerdown', () => isDrawing = true);
+        editorCanvas.addEventListener('pointerup', () => isDrawing = false);
+        editorCanvas.addEventListener('pointermove', (e) => {
+            if(!isDrawing) return;
+            const rect = editorCanvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / (rect.width/FLAG_COLS));
+            const y = Math.floor((e.clientY - rect.top) / (rect.height/FLAG_ROWS));
+            if(x>=0 && x<FLAG_COLS && y>=0 && y<FLAG_ROWS) {
+                tempFlag[y*FLAG_COLS+x] = document.getElementById('editorColor').value;
+                drawEditor();
             }
-        }
-
-        document.getElementById('saveFlagBtn').addEventListener('click', () => {
-            myCountry.flag = JSON.stringify(currentFlag);
-            saveGame();
-            feedback("Drapeau sauvegardé !");
-        });
-        document.getElementById('clearFlagBtn').addEventListener('click', () => {
-            currentFlag.fill('#ffffff');
-            drawFlag();
         });
         
-        function drawTinyFlag(cnv, json) {
-            const cx = cnv.getContext('2d');
-            const w = cnv.width / FLAG_COLS;
-            const h = cnv.height / FLAG_ROWS;
-            let f = [];
-            try { f = JSON.parse(json); } catch(e){}
-            for(let i=0; i<f.length; i++) {
-                cx.fillStyle = f[i] || '#fff';
-                cx.fillRect((i%FLAG_COLS)*w, Math.floor(i/FLAG_COLS)*h, w, h);
+        function clearEditor() { tempFlag.fill('#ffffff'); drawEditor(); }
+
+        function renderMenuFlag() {
+            const c = document.getElementById('menuFlagCanvas');
+            const ctx = c.getContext('2d');
+            const w = c.width / FLAG_COLS;
+            const h = c.height / FLAG_ROWS;
+            for(let i=0; i<profile.flag.length; i++) {
+                ctx.fillStyle = profile.flag[i];
+                ctx.fillRect((i%FLAG_COLS)*w, Math.floor(i/FLAG_COLS)*h, w, h);
             }
         }
 
-        function feedback(txt) {
-            els.feedback.textContent = txt;
-            setTimeout(() => els.feedback.textContent = '', 3000);
+        function drawMiniFlag(ctx, flagData, w, h) {
+            const pw = w / FLAG_COLS;
+            const ph = h / FLAG_ROWS;
+            for(let i=0; i<flagData.length; i++) {
+                ctx.fillStyle = flagData[i];
+                ctx.fillRect((i%FLAG_COLS)*pw, Math.floor(i/FLAG_COLS)*ph, pw, ph);
+            }
         }
 
-        // --- START ---
-        els.status.textContent = "Mode Solo/Vercel Activé";
-        els.status.className = "mt-2 inline-block px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold";
-        loadGame();
+        // --- NAVIGATION ---
+        function hideAllScreens() {
+            ['screen-menu', 'screen-solo', 'screen-multi-lobby', 'screen-multi-game'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+        }
+        function goHome() {
+            if(multiPeer) { multiPeer.destroy(); multiPeer = null; }
+            hideAllScreens();
+            document.getElementById('screen-menu').classList.remove('hidden');
+        }
 
+        // ==================== MOTEUR SOLO ====================
+        let soloState = { turn: 1, players: [] };
+        
+        function startSolo() {
+            saveProfile(); // Sauvegarder nom/drapeau avant de lancer
+            hideAllScreens();
+            document.getElementById('screen-solo').classList.remove('hidden');
+            
+            // Charger ou Init
+            const saved = localStorage.getItem(SOLO_SAVE_KEY);
+            if(saved) {
+                soloState = JSON.parse(saved);
+                // Mettre à jour le joueur avec le profil actuel (si changé)
+                const me = soloState.players.find(p => p.id === 'me');
+                if(me) { me.name = profile.name; me.flag = profile.flag; }
+            } else {
+                initSoloGame();
+            }
+            renderSoloUI();
+        }
+
+        function initSoloGame() {
+            soloState.turn = 1;
+            soloState.players = [];
+            // Moi
+            soloState.players.push({
+                id: 'me', name: profile.name, flag: profile.flag, isBot: false,
+                hp: 100, eco: 20, mil: 20, stab: 20, actions: 1
+            });
+            // Bots
+            const botNames = ["Empire Alpha", "République Beta", "Union Gamma", "Royaume Delta", "Horde Omega"];
+            for(let i=0; i<5; i++) {
+                soloState.players.push({
+                    id: 'bot_'+i, name: botNames[i], 
+                    flag: new Array(150).fill('#'+Math.floor(Math.random()*16777215).toString(16)),
+                    isBot: true, hp: 100, eco: 20+Math.random()*10, mil: 20+Math.random()*10, stab: 20, actions: 1
+                });
+            }
+            localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify(soloState));
+        }
+
+        function soloAction(type) {
+            const me = soloState.players.find(p => p.id === 'me');
+            if(me.actions <= 0 || me.hp <= 0) return;
+            
+            if(type === 'eco') me.eco = Math.min(100, me.eco + 5);
+            if(type === 'mil') me.mil = Math.min(100, me.mil + 5);
+            if(type === 'stab') { me.stab = Math.min(100, me.stab + 5); me.hp = Math.min(100, me.hp + 2); }
+            
+            me.actions--;
+            renderSoloUI();
+            localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify(soloState));
+        }
+
+        function soloAttack() {
+            const me = soloState.players.find(p => p.id === 'me');
+            if(me.actions <= 0) return;
+            const tid = document.getElementById('soloTargetSelect').value;
+            const target = soloState.players.find(p => p.id === tid);
+            
+            const dmg = Math.max(5, (me.mil * 0.5) - (target.mil * 0.2));
+            target.hp = Math.max(0, Math.floor(target.hp - dmg));
+            me.actions--;
+            
+            logSolo(`Attaque sur ${target.name}: -${Math.floor(dmg)} HP`);
+            renderSoloUI();
+            localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify(soloState));
+        }
+
+        function soloEndTurn() {
+            const me = soloState.players.find(p => p.id === 'me');
+            
+            // Revenu
+            const inc = 5 + Math.floor(me.eco/10);
+            me.eco = Math.min(100, me.eco + inc);
+            me.actions = 1;
+            soloState.turn++;
+            logSolo(`Tour ${soloState.turn}: Revenu +${inc}`);
+
+            // Bots AI
+            soloState.players.forEach(p => {
+                if(p.isBot && p.hp > 0) {
+                    if(p.hp < 50) p.mil = Math.min(100, p.mil+5);
+                    else if(p.eco < 40) p.eco = Math.min(100, p.eco+5);
+                    else if(Math.random() > 0.7) {
+                        // Attack
+                        const targets = soloState.players.filter(t => t.id !== p.id && t.hp > 0);
+                        const t = targets[Math.floor(Math.random()*targets.length)];
+                        const dmg = Math.max(5, (p.mil*0.4) - (t.mil*0.2));
+                        t.hp = Math.max(0, Math.floor(t.hp - dmg));
+                        if(t.id === 'me') logSolo(`${p.name} vous attaque! -${Math.floor(dmg)} HP`);
+                    } else {
+                        p.eco = Math.min(100, p.eco+5);
+                    }
+                    p.actions = 1;
+                }
+            });
+            renderSoloUI();
+            localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify(soloState));
+        }
+
+        function logSolo(msg) {
+            const div = document.createElement('div');
+            div.textContent = "> " + msg;
+            document.getElementById('soloLog').prepend(div);
+        }
+
+        function renderSoloUI() {
+            const me = soloState.players.find(p => p.id === 'me');
+            document.getElementById('soloHeaderName').textContent = me.name;
+            document.getElementById('soloTurn').textContent = soloState.turn;
+            document.getElementById('soloHpText').textContent = me.hp + '%';
+            document.getElementById('soloHpBar').style.width = me.hp + '%';
+            
+            document.getElementById('soloEcoVal').textContent = Math.floor(me.eco); document.getElementById('soloEcoBar').style.width = me.eco + '%';
+            document.getElementById('soloMilVal').textContent = Math.floor(me.mil); document.getElementById('soloMilBar').style.width = me.mil + '%';
+            document.getElementById('soloStabVal').textContent = Math.floor(me.stab); document.getElementById('soloStabBar').style.width = me.stab + '%';
+            
+            document.getElementById('soloActions').textContent = me.actions + " Action";
+            const btns = document.querySelectorAll('#screen-solo button.btn');
+            btns.forEach(b => { if(b.textContent.includes('Fin')) return; b.disabled = me.actions<=0; b.classList.toggle('opacity-50', me.actions<=0); });
+
+            const list = document.getElementById('soloRanking');
+            const sel = document.getElementById('soloTargetSelect');
+            list.innerHTML = ''; sel.innerHTML = '';
+            
+            [...soloState.players].sort((a,b) => b.hp - a.hp).forEach(p => {
+                const div = document.createElement('div');
+                div.className = `p-2 flex items-center gap-2 ${p.id==='me'?'bg-blue-900/30':''}`;
+                
+                const cvs = document.createElement('canvas');
+                cvs.width = 30; cvs.height = 20;
+                drawMiniFlag(cvs.getContext('2d'), p.flag, 30, 20);
+                
+                div.appendChild(cvs);
+                div.innerHTML += `<div class="flex-1 text-sm font-bold ${p.hp<=0?'text-red-500 line-through':'text-white'}">${p.name}</div><div class="text-xs text-gray-400">${p.hp}% HP</div>`;
+                list.appendChild(div);
+
+                if(p.id !== 'me' && p.hp > 0) {
+                    const opt = document.createElement('option');
+                    opt.value = p.id; opt.textContent = p.name;
+                    sel.appendChild(opt);
+                }
+            });
+        }
+
+        // ==================== MOTEUR MULTI (P2P) ====================
+        let multiPeer = null;
+        let multiConn = null;
+        let multiConnections = [];
+        let isHost = false;
+        let myPeerId = null;
+        let multiState = { players: {}, logs: [] };
+
+        function openMultiLobby() {
+            saveProfile();
+            hideAllScreens();
+            document.getElementById('screen-multi-lobby').classList.remove('hidden');
+        }
+
+        function showJoinInput() {
+            document.getElementById('multiJoinArea').classList.remove('hidden');
+        }
+
+        function initPeer(host) {
+            isHost = host;
+            const id = host ? 'GEO-' + Math.floor(Math.random()*10000) : null;
+            multiPeer = new Peer(id);
+
+            multiPeer.on('open', (id) => {
+                myPeerId = id;
+                if(isHost) {
+                    document.getElementById('multiHostArea').classList.remove('hidden');
+                    document.getElementById('multiCodeDisplay').textContent = id;
+                    document.getElementById('multiStatus').textContent = "En attente de joueurs...";
+                    // Add self
+                    addMultiPlayer(id, profile.name, profile.flag, true);
+                } else {
+                    const hostId = document.getElementById('multiHostInput').value.trim();
+                    multiConn = multiPeer.connect(hostId);
+                    setupMultiConn(multiConn);
+                }
+            });
+
+            multiPeer.on('connection', (conn) => {
+                if(isHost) {
+                    setupMultiConn(conn);
+                    multiConnections.push(conn);
+                }
+            });
+        }
+
+        function setupMultiConn(conn) {
+            conn.on('open', () => {
+                if(isHost) {
+                    // Wait for HELLO
+                } else {
+                    // Connected to host
+                    document.getElementById('screen-multi-lobby').classList.add('hidden');
+                    document.getElementById('screen-multi-game').classList.remove('hidden');
+                    conn.send({ type: 'HELLO', name: profile.name, flag: profile.flag });
+                }
+            });
+            conn.on('data', (data) => handleMultiData(data, conn));
+        }
+
+        function handleMultiData(data, conn) {
+            if(isHost) {
+                if(data.type === 'HELLO') {
+                    addMultiPlayer(conn.peer, data.name, data.flag, false);
+                    broadcastMulti();
+                } else if(data.type === 'ACTION') {
+                    processMultiAction(conn.peer, data.action, data.payload);
+                    broadcastMulti();
+                }
+            } else {
+                if(data.type === 'STATE') {
+                    multiState = data.state;
+                    renderMultiUI();
+                }
+            }
+        }
+
+        function addMultiPlayer(id, name, flag, host) {
+            if(!multiState.players[id]) {
+                multiState.players[id] = {
+                    id: id, name: name, flag: flag, hp: 100,
+                    eco: 20, mil: 20, spy: 20, actions: 1
+                };
+                if(!host) { // Si un invité rejoint, l'hôte bascule en écran de jeu s'il n'y est pas
+                     document.getElementById('screen-multi-lobby').classList.add('hidden');
+                     document.getElementById('screen-multi-game').classList.remove('hidden');
+                }
+            }
+        }
+
+        function processMultiAction(id, type, payload) {
+            const p = multiState.players[id];
+            if(!p || p.hp <= 0) return;
+            
+            if(type === 'invest') { p.eco = Math.min(100, p.eco+5); p.hp = Math.min(100, p.hp+1); }
+            else if(type === 'recruit') p.mil = Math.min(100, p.mil+5);
+            else if(type === 'spy') p.spy = Math.min(100, p.spy+5);
+            else if(type === 'attack') {
+                const t = multiState.players[payload.target];
+                if(t) {
+                    const dmg = Math.max(5, (p.mil*0.6) - (t.mil*0.2));
+                    t.hp = Math.max(0, Math.floor(t.hp - dmg));
+                    multiState.logs.push(`${p.name} attaque ${t.name}: -${Math.floor(dmg)}`);
+                }
+            }
+        }
+
+        function broadcastMulti() {
+            const msg = { type: 'STATE', state: multiState };
+            multiConnections.forEach(c => c.send(msg));
+            renderMultiUI();
+        }
+
+        function multiSend(action) {
+            let payload = {};
+            if(action === 'attack') {
+                payload.target = document.getElementById('multiTargetSelect').value;
+                if(!payload.target) return;
+            }
+            
+            if(isHost) {
+                processMultiAction(myPeerId, action, payload);
+                broadcastMulti();
+            } else {
+                multiConn.send({ type: 'ACTION', action: action, payload: payload });
+            }
+        }
+
+        function renderMultiUI() {
+            const me = multiState.players[myPeerId];
+            if(!me) return;
+
+            document.getElementById('multiMyName').textContent = me.name;
+            document.getElementById('multiHpBar').style.width = me.hp + '%';
+            document.getElementById('multiEcoVal').textContent = Math.floor(me.eco);
+            document.getElementById('multiMilVal').textContent = Math.floor(me.mil);
+            document.getElementById('multiSpyVal').textContent = Math.floor(me.spy);
+            document.getElementById('multiActions').textContent = "En ligne";
+
+            const logDiv = document.getElementById('multiLog');
+            logDiv.innerHTML = multiState.logs.map(l => `<div>> ${l}</div>`).join('');
+
+            const list = document.getElementById('multiPlayerList');
+            const sel = document.getElementById('multiTargetSelect');
+            list.innerHTML = ''; sel.innerHTML = '';
+
+            Object.values(multiState.players).forEach(p => {
+                const div = document.createElement('div');
+                div.className = `p-2 flex items-center gap-2 border-b border-slate-700 ${p.id===myPeerId?'bg-blue-900/30':''}`;
+                const cvs = document.createElement('canvas');
+                cvs.width = 30; cvs.height = 20;
+                drawMiniFlag(cvs.getContext('2d'), p.flag, 30, 20);
+                div.appendChild(cvs);
+                div.innerHTML += `<div class="flex-1 text-sm">${p.name}</div><div class="text-xs ${p.hp<=0?'text-red-500':'text-green-400'}">${p.hp}% HP</div>`;
+                list.appendChild(div);
+
+                if(p.id !== myPeerId && p.hp > 0) {
+                    const opt = document.createElement('option');
+                    opt.value = p.id; opt.textContent = p.name;
+                    sel.appendChild(opt);
+                }
+            });
+        }
     </script>
 </body>
 </html>
