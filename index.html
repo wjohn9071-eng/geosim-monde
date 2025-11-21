@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoSim 2025: Simulation de Pays Avancée</title>
+    <!-- Chargement de Tailwind CSS pour un style moderne et réactif -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Styles personnalisés pour l'esthétique du jeu */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        .card {
+            background-color: white;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+        }
+        /* Barre de statistiques */
+        .stat-bar { height: 10px; border-radius: 9999px; overflow: hidden; background-color: #e5e7eb; }
+        .stat-bar-fill { transition: width 0.5s ease-out; }
+        /* Style spécifique pour la grille de pixels du drapeau */
+        #flagCanvas { border: 2px solid #3b82f6; cursor: crosshair; image-rendering: pixelated; }
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <header class="text-center mb-8">
+        <h1 class="text-4xl font-extrabold text-blue-800">GeoSim 2025 (Avancé)</h1>
+        <p class="text-xl text-gray-600">Avec Bots, Alliances et Guerre en Temps Réel</p>
+        <p class="text-sm mt-2 text-red-500 font-semibold">
+            ATTENTION: Pour le multijoueur, vous devez partager la même session de travail Canvas avec vos amis !
+        </p>
+    </header>
+
+    <main id="app" class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Colonne 1: Votre Pays et Statistiques -->
+        <section class="lg:col-span-1 space-y-8">
+
+            <!-- Statut de la Connexion et Pays -->
+            <div id="authStatus" class="card p-6">
+                <h2 class="text-2xl font-bold mb-4 text-blue-700">Votre Statut</h2>
+                <p id="userIdDisplay" class="text-sm break-all text-gray-500 mb-4">ID Utilisateur: Chargement...</p>
+                <div id="countrySetup" class="space-y-4">
+                    <input type="text" id="countryNameInput" placeholder="Nom de votre Pays" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <button id="createCountryBtn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
+                        Créer/Rejoindre le Pays
+                    </button>
+                    <p id="countryStatus" class="text-sm text-red-500"></p>
+                </div>
+            </div>
+
+            <!-- Affichage des Statistiques -->
+            <div id="countryStats" class="card p-6 hidden">
+                <h2 class="text-3xl font-extrabold mb-4 text-center" id="myCountryName">Mon Pays</h2>
+                <p id="conquestStatus" class="text-lg font-bold text-center mb-4 text-red-700"></p>
+                
+                <div class="space-y-4">
+                    <!-- Stat Santé/Vie (Nouveau) -->
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <span class="font-semibold text-gray-700">Santé (Vie)</span>
+                            <span class="text-sm font-medium text-red-600" id="healthPercent">0%</span>
+                        </div>
+                        <div class="stat-bar">
+                            <div id="healthBar" class="stat-bar-fill bg-red-500" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <!-- Stat Économie -->
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <span class="font-semibold text-gray-700">Économie (<span id="economyValue">0</span>)</span>
+                            <span class="text-sm font-medium text-blue-600" id="economyPercent">0%</span>
+                        </div>
+                        <div class="stat-bar">
+                            <div id="economyBar" class="stat-bar-fill bg-blue-500" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <!-- Stat Stabilité -->
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <span class="font-semibold text-gray-700">Stabilité (<span id="stabilityValue">0</span>)</span>
+                            <span class="text-sm font-medium text-green-600" id="stabilityPercent">0%</span>
+                        </div>
+                        <div class="stat-bar">
+                            <div id="stabilityBar" class="stat-bar-fill bg-green-500" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <!-- Stat Militaire -->
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <span class="font-semibold text-gray-700">Militaire (<span id="militaryValue">0</span>)</span>
+                            <span class="text-sm font-medium text-yellow-600" id="militaryPercent">0%</span>
+                        </div>
+                        <div class="stat-bar">
+                            <div id="militaryBar" class="stat-bar-fill bg-yellow-500" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-lg font-semibold mt-4 text-gray-800">Allégeance: <span id="allianceTag" class="text-purple-600 font-bold">SOLO</span></p>
+                <p class="text-lg font-semibold text-gray-800">Revenu/Tour: <span id="incomeValue" class="text-blue-600">0</span></p>
+            </div>
+            
+            <!-- Gestion des Alliances -->
+            <div id="allianceManagement" class="card p-6 hidden">
+                <h2 class="text-2xl font-bold mb-4 text-purple-700">Diplomatie & Alliance</h2>
+                <input type="text" id="allianceNameInput" placeholder="Nom de l'Alliance" class="w-full p-3 border border-gray-300 rounded-lg mb-3">
+                <button id="joinAllianceBtn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                    Rejoindre/Créer Alliance
+                </button>
+                <button id="leaveAllianceBtn" class="w-full mt-2 bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                    Quitter l'Alliance
+                </button>
+                <p class="mt-3 text-sm text-gray-600">Alliés dans l'Alliance: <span id="allianceMembersCount">0</span></p>
+            </div>
+        </section>
+
+        <!-- Colonne 2: Éditeur de Drapeau et Actions de Tour -->
+        <section class="lg:col-span-1 space-y-8">
+            
+            <!-- Éditeur de Drapeau en Pixel -->
+            <div class="card p-6">
+                <h2 class="text-2xl font-bold mb-4 text-blue-700">Concevoir Votre Drapeau (Pixel Art 15x10)</h2>
+                <div class="flex flex-col items-center space-y-4">
+                    <!-- Le canvas est affiché en 300x200 pour le rendu visible, mais la grille est 15x10 -->
+                    <canvas id="flagCanvas" width="300" height="200" class="rounded-lg shadow-inner"></canvas>
+                    <div class="flex flex-wrap gap-2 justify-center w-full">
+                        <label class="font-semibold text-gray-700 mr-2">Couleur:</label>
+                        <input type="color" id="colorPicker" value="#000000" class="h-10 w-10 p-1 border-2 border-gray-300 rounded-full cursor-pointer">
+                        <button id="clearFlagBtn" class="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                            Effacer
+                        </button>
+                    </div>
+                    <button id="saveFlagBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
+                        Sauvegarder le Drapeau
+                    </button>
+                </div>
+            </div>
+
+            <!-- Actions du Pays -->
+            <div id="countryActions" class="card p-6 hidden">
+                <h2 class="text-2xl font-bold mb-4 text-blue-700">Actions (1/Tour)</h2>
+                <div class="grid grid-cols-1 gap-3">
+                    <button data-action="economy" class="action-btn bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-3 px-4 rounded-lg transition duration-200">
+                        Investir Économie (+5 Éco)
+                    </button>
+                    <button data-action="stability" class="action-btn bg-green-100 hover:bg-green-200 text-green-800 font-semibold py-3 px-4 rounded-lg transition duration-200">
+                        Promouvoir Stabilité (+5 Stab)
+                    </button>
+                    <button data-action="military" class="action-btn bg-yellow-100 hover:bg-yellow-200 text-yellow-800 font-semibold py-3 px-4 rounded-lg transition duration-200">
+                        Développer Armée (+5 Mil)
+                    </button>
+                    <select id="attackTarget" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <option value="">Sélectionner une cible pour attaquer</option>
+                    </select>
+                    <button data-action="attack" id="attackBtn" class="action-btn bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
+                        ATTAQUER LA CIBLE (-10 Vie estimé)
+                    </button>
+                </div>
+                
+                <button id="endTurnBtn" class="w-full mt-6 bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-4 rounded-lg transition duration-200 shadow-lg hover:shadow-xl">
+                    FIN DE TOUR <span id="turnCounter" class="ml-2">(Actions restantes: 1)</span>
+                </button>
+                <p id="actionFeedback" class="mt-3 text-center text-sm font-medium h-4"></p>
+            </div>
+        </section>
+
+        <!-- Colonne 3: Classement Multijoueur & Bots -->
+        <section class="lg:col-span-1 space-y-8">
+            <div class="card p-6">
+                <h2 class="text-2xl font-bold mb-4 text-blue-700">Classement Mondial (Temps Réel)</h2>
+                <p id="botStatus" class="text-xs text-red-500 mb-4 font-semibold">Initialisation des Bots en cours...</p>
+                <div class="overflow-y-auto max-h-96 custom-scrollbar">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Drapeau</th>
+                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pays (Alliance)</th>
+                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vie</th>
+                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mil</th>
+                            </tr>
+                        </thead>
+                        <tbody id="countryList" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="4" class="text-center py-4 text-gray-500">Chargement des pays...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Dépendances Firebase -->
+    <script type="module">
+        // Importations nécessaires de Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, writeBatch, runTransaction, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Définir le niveau de log pour le débogage de Firestore
+        setLogLevel('debug');
+
+        // Variables globales fournies par l'environnement Canvas (MANDATOIRE)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Variables d'état du jeu
+        let app, db, auth;
+        let userId = null;
+        let myCountryRef = null;
+        let currentCountryState = null;
+        let allCountries = [];
+        let botIntervalId = null; // Pour gérer l'intervalle des actions des bots
+        
+        // Constantes du jeu
+        const MAX_STAT = 100;
+        const BASE_INCOME = 10;
+        // Chemin de collection public pour le jeu multijoueur (partagé par tous les utilisateurs du même App ID)
+        const COLLECTION_PATH = `/artifacts/${appId}/public/data/countries`;
+        // Document de métadonnées pour le verrouillage des actions des bots
+        const METADATA_DOC = `/artifacts/${appId}/public/data/metadata/game`; 
+        const FLAG_COLS = 15;
+        const FLAG_ROWS = 10;
+        const BOT_CYCLE_INTERVAL_MS = 60000; // 60 secondes entre les cycles des bots
+        
+        // Références DOM (Abrégées)
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const countrySetup = document.getElementById('countrySetup');
+        const countryStatsDiv = document.getElementById('countryStats');
+        const countryActionsDiv = document.getElementById('countryActions');
+        const allianceManagementDiv = document.getElementById('allianceManagement');
+        const countryNameInput = document.getElementById('countryNameInput');
+        const createCountryBtn = document.getElementById('createCountryBtn');
+        const endTurnBtn = document.getElementById('endTurnBtn');
+        const actionFeedback = document.getElementById('actionFeedback');
+        const turnCounter = document.getElementById('turnCounter');
+        const attackTargetSelect = document.getElementById('attackTarget');
+
+        // --- Fonctions d'Initialisation et d'Authentification ---
+
+        /**
+         * Initialise Firebase, gère l'authentification et configure les écouteurs.
+         */
+        async function initFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Garder l'état de la session
+                await setPersistence(auth, browserSessionPersistence);
+
+                // Authentification avec le jeton fourni ou anonymement
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Écouteur de l'état d'authentification
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = `ID Utilisateur: ${userId.substring(0, 8)}...`;
+                        checkUserCountry(userId);
+                        setupCountryListListener();
+                        // Démarrer le processus d'exécution des actions des bots
+                        if (!botIntervalId) {
+                            botIntervalId = setInterval(processBotActions, BOT_CYCLE_INTERVAL_MS); 
+                            // Exécuter immédiatement pour vérifier l'état
+                            processBotActions();
+                        }
+                    } else {
+                        userIdDisplay.textContent = 'ID Utilisateur: Déconnecté/Anonyme';
+                    }
+                });
+
+            } catch (error) {
+                console.error("Erreur d'initialisation Firebase/Auth:", error);
+                userIdDisplay.textContent = `ID Utilisateur: ERREUR`;
+            }
+        }
+
+        // --- Logique de Création et de Synchronisation ---
+
+        const BOT_NAMES = ['Atlantis', 'Eldorado', 'Xanadu', 'Valhalla', 'Aethelgard'];
+
+        /**
+         * Génère un tableau de couleurs pour un drapeau initial 15x10.
+         */
+        function getInitialFlag(index) {
+            const colors = ['#ffffff', '#000000', '#ff0000', '#0000ff', '#00ff00'];
+            const flag = [];
+            for(let r = 0; r < FLAG_ROWS; r++) {
+                for(let c = 0; c < FLAG_COLS; c++) {
+                    flag.push(colors[(r + c + index) % colors.length]);
+                }
+            }
+            return flag;
+        }
+
+        /**
+         * Crée les pays contrôlés par l'IA (Bots) s'ils n'existent pas.
+         */
+        async function createInitialBots() {
+            const batch = writeBatch(db);
+            const botIds = BOT_NAMES.map(name => `BOT_${name.toUpperCase()}`);
+
+            for (let i = 0; i < BOT_NAMES.length; i++) {
+                const botId = botIds[i];
+                const botRef = doc(db, COLLECTION_PATH, botId);
+                const botDoc = await getDoc(botRef);
+                
+                if (!botDoc.exists()) {
+                    const newBot = {
+                        userId: botId,
+                        name: BOT_NAMES[i],
+                        isBot: true,
+                        flag: JSON.stringify(getInitialFlag(i)), 
+                        economy: 30,
+                        stability: 30,
+                        military: 30,
+                        health: 100,
+                        alliance: null,
+                        actionsLeft: 1,
+                        lastTurnTimestamp: Date.now()
+                    };
+                    batch.set(botRef, newBot);
+                }
+            }
+            await batch.commit();
+        }
+        
+        /**
+         * Vérifie si l'utilisateur possède déjà un pays et configure l'interface.
+         */
+        async function checkUserCountry(uid) {
+            myCountryRef = doc(db, COLLECTION_PATH, uid);
+            const countryDoc = await getDoc(myCountryRef);
+
+            if (countryDoc.exists() && !countryDoc.data().isBot) {
+                currentCountryState = countryDoc.data();
+                setupCountryListeners(uid);
+                showGameUI(currentCountryState.name);
+                loadFlagFromState(currentCountryState.flag);
+            } else {
+                // Afficher l'interface de configuration si le pays n'existe pas
+                countrySetup.classList.remove('hidden');
+                countryStatsDiv.classList.add('hidden');
+                countryActionsDiv.classList.add('hidden');
+                allianceManagementDiv.classList.add('hidden');
+                await createInitialBots();
+            }
+        }
+
+        /**
+         * Configure l'écouteur en temps réel pour l'état du pays de l'utilisateur.
+         */
+        function setupCountryListeners(uid) {
+            onSnapshot(doc(db, COLLECTION_PATH, uid), (doc) => {
+                if (doc.exists()) {
+                    const data = doc.data();
+                    currentCountryState = data;
+                    updateUI(data);
+                    // Gérer l'état de conquête
+                    if (data.health <= 0) {
+                         document.getElementById('conquestStatus').textContent = "PAYS CONQUIS ! Réparations coûteuses nécessaires.";
+                         countryActionsDiv.classList.add('opacity-50', 'pointer-events-none');
+                    } else {
+                         document.getElementById('conquestStatus').textContent = "";
+                         countryActionsDiv.classList.remove('opacity-50', 'pointer-events-none');
+                    }
+
+                }
+            });
+        }
+        
+        /**
+         * Configure l'écouteur en temps réel pour la liste de tous les pays (joueurs et bots).
+         */
+        function setupCountryListListener() {
+            const q = query(collection(db, COLLECTION_PATH));
+            onSnapshot(q, (snapshot) => {
+                allCountries = [];
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    allCountries.push({ id: doc.id, ...data });
+                });
+                // Trier par score (Santé est prioritaire, puis Militaire)
+                allCountries.sort((a, b) => (b.health * 10 + b.military) - (a.health * 10 + a.military));
+                renderCountryList(allCountries);
+                populateTargetSelect(allCountries);
+            });
+        }
+
+        // --- Logique du Pays et UI ---
+
+        /**
+         * Met à jour l'interface utilisateur avec l'état actuel du pays.
+         */
+        function updateUI(state) {
+            if (!state) return;
+            
+            // Mise à jour des valeurs
+            document.getElementById('economyValue').textContent = state.economy;
+            document.getElementById('stabilityValue').textContent = state.stability;
+            document.getElementById('militaryValue').textContent = state.military;
+
+            // Health (Santé)
+            const healthPct = Math.min(100, Math.round(state.health));
+            document.getElementById('healthPercent').textContent = `${healthPct}%`;
+            document.getElementById('healthBar').style.width = `${healthPct}%`;
+            // Changer la couleur de la barre de santé en fonction de l'état
+            document.getElementById('healthBar').className = `stat-bar-fill ${healthPct > 50 ? 'bg-red-500' : (healthPct > 20 ? 'bg-orange-500' : 'bg-red-800')}`;
+
+
+            // Autres Stats
+            const updateStatBar = (id, value, color) => {
+                const pct = Math.min(100, Math.round((value / MAX_STAT) * 100));
+                document.getElementById(`${id}Percent`).textContent = `${pct}%`;
+                document.getElementById(`${id}Bar`).style.width = `${pct}%`;
+                document.getElementById(`${id}Bar`).className = `stat-bar-fill bg-${color}-500`;
+            };
+
+            updateStatBar('economy', state.economy, 'blue');
+            updateStatBar('stability', state.stability, 'green');
+            updateStatBar('military', state.military, 'yellow');
+
+            // Revenu
+            const calculatedIncome = BASE_INCOME + Math.floor(state.economy / 10);
+            document.getElementById('incomeValue').textContent = calculatedIncome;
+            
+            // Actions restantes
+            updateActionsLeft(state.actionsLeft || 0);
+            
+            // Alliance
+            const allianceName = state.alliance || 'SOLO';
+            document.getElementById('allianceTag').textContent = allianceName;
+            document.getElementById('allianceNameInput').value = allianceName === 'SOLO' ? '' : allianceName;
+        }
+        
+        /**
+         * Met à jour l'affichage des actions restantes.
+         */
+        function updateActionsLeft(count) {
+            const actionsLeft = count;
+            turnCounter.textContent = `(Actions restantes: ${actionsLeft})`;
+            // Le bouton Fin de Tour est désactivé s'il reste des actions
+            endTurnBtn.disabled = actionsLeft > 0;
+            endTurnBtn.classList.toggle('opacity-50', actionsLeft > 0);
+        }
+
+        /**
+         * Rend le tableau du classement mondial.
+         */
+        function renderCountryList(countries) {
+            const list = document.getElementById('countryList');
+            list.innerHTML = '';
+            let allianceMembers = 0;
+
+            if (countries.length === 0) {
+                 list.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">Aucun pays trouvé.</td></tr>';
+                 return;
+            }
+
+            countries.forEach((country) => {
+                if (country.userId === userId && country.alliance) {
+                    allianceMembers = countries.filter(c => c.alliance === country.alliance).length;
+                }
+                const row = document.createElement('tr');
+                // Souligner le pays de l'utilisateur et marquer les bots
+                row.className = `hover:bg-gray-100 transition duration-150 ${country.isBot ? 'bg-gray-50' : ''} ${country.userId === userId ? 'bg-blue-50 border-l-4 border-blue-500' : ''}`;
+
+                // Drapeaux (miniatures)
+                const flagCell = document.createElement('td');
+                flagCell.className = 'px-2 py-3 whitespace-nowrap';
+                const canvasTiny = document.createElement('canvas');
+                canvasTiny.width = 45; canvasTiny.height = 30;
+                drawFlagOnCanvas(canvasTiny, country.flag);
+                flagCell.appendChild(canvasTiny);
+
+                // Nom et Alliance
+                const nameCell = document.createElement('td');
+                nameCell.className = 'px-2 py-3 whitespace-nowrap text-sm font-medium text-gray-900';
+                const botTag = country.isBot ? ' <span class="text-red-500 text-xs">(BOT)</span>' : '';
+                const allianceTag = country.alliance ? `<span class="text-purple-500 text-xs font-bold"> [${country.alliance}]</span>` : '';
+                nameCell.innerHTML = `<span class="font-bold">${country.name}</span>${botTag}<br>${allianceTag}`;
+
+                // Vie
+                const healthCell = document.createElement('td');
+                healthCell.className = 'px-2 py-3 whitespace-nowrap text-sm font-bold';
+                healthCell.textContent = Math.max(0, country.health);
+
+                // Militaire
+                const milCell = document.createElement('td');
+                milCell.className = 'px-2 py-3 whitespace-nowrap text-sm font-bold';
+                milCell.textContent = country.military;
+
+
+                row.appendChild(flagCell);
+                row.appendChild(nameCell);
+                row.appendChild(healthCell);
+                row.appendChild(milCell);
+                list.appendChild(row);
+            });
+            document.getElementById('allianceMembersCount').textContent = allianceMembers;
+        }
+
+        /**
+         * Remplit le sélecteur de cible d'attaque avec les pays non-alliés.
+         */
+        function populateTargetSelect(countries) {
+            attackTargetSelect.innerHTML = '<option value="">Sélectionner une cible pour attaquer</option>';
+            countries.forEach(country => {
+                // Ne peut pas s'attaquer soi-même ou un pays conquis
+                if (country.userId !== userId && country.health > 0) {
+                    // Ne pas attaquer les alliés si l'utilisateur est dans une alliance
+                    const isAlly = currentCountryState && currentCountryState.alliance && currentCountryState.alliance === country.alliance;
+                    if (isAlly) return; 
+
+                    const option = document.createElement('option');
+                    option.value = country.userId;
+                    option.textContent = `${country.name} (${country.isBot ? 'BOT' : 'Joueur'}) [Mil: ${country.military}, Vie: ${country.health}]`;
+                    attackTargetSelect.appendChild(option);
+                }
+            });
+        }
+
+
+        // --- Gestion des Événements (Création, Actions, Tours) ---
+
+        createCountryBtn.addEventListener('click', async () => {
+            const name = countryNameInput.value.trim();
+            if (!name || !userId) {
+                document.getElementById('countryStatus').textContent = "Veuillez entrer un nom et assurez-vous d'être connecté.";
+                return;
+            }
+
+            const initialFlagData = JSON.stringify(getFlagPixelData());
+
+            const newCountry = {
+                userId: userId,
+                name: name,
+                isBot: false,
+                flag: initialFlagData,
+                economy: 20,
+                stability: 20,
+                military: 20,
+                health: 100, // Santé initiale complète
+                alliance: null,
+                actionsLeft: 1,
+                lastTurnTimestamp: Date.now()
+            };
+
+            try {
+                // Utiliser la transaction pour s'assurer qu'un nom de pays est unique (bien que le risque soit faible ici)
+                await setDoc(doc(db, COLLECTION_PATH, userId), newCountry);
+                currentCountryState = newCountry;
+                setupCountryListeners(userId);
+                showGameUI(name);
+            } catch (e) {
+                console.error("Erreur lors de la création du pays:", e);
+                document.getElementById('countryStatus').textContent = `Erreur: ${e.message}`;
+            }
+        });
+
+        function showGameUI(name) {
+            document.getElementById('myCountryName').textContent = name;
+            countrySetup.classList.add('hidden');
+            countryStatsDiv.classList.remove('hidden');
+            countryActionsDiv.classList.remove('hidden');
+            allianceManagementDiv.classList.remove('hidden');
+        }
+
+        // Événements pour les actions de développement et l'attaque
+        document.querySelectorAll('.action-btn').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                if (!currentCountryState || currentCountryState.actionsLeft <= 0 || currentCountryState.health <= 0) return;
+
+                const action = e.target.getAttribute('data-action');
+                if (action === 'attack') {
+                    handleAttackAction();
+                    return;
+                }
+
+                let update = {};
+                let message = "Action effectuée.";
+                
+                // Logique des actions de développement
+                switch (action) {
+                    case 'economy':
+                        update.economy = Math.min(MAX_STAT, currentCountryState.economy + 5);
+                        message = "Investissement majeur dans les infrastructures (+5 Économie).";
+                        break;
+                    case 'stability':
+                        update.stability = Math.min(MAX_STAT, currentCountryState.stability + 5);
+                        message = "Programme social pour la cohésion nationale (+5 Stabilité).";
+                        break;
+                    case 'military':
+                        update.military = Math.min(MAX_STAT, currentCountryState.military + 5);
+                        message = "Modernisation rapide des forces armées (+5 Militaire).";
+                        break;
+                    default:
+                        return;
+                }
+
+                // Réduction des actions restantes
+                update.actionsLeft = currentCountryState.actionsLeft - 1;
+                
+                try {
+                    await updateDoc(myCountryRef, update);
+                    showFeedback(message, 'green');
+                } catch (error) {
+                    console.error("Erreur d'action:", error);
+                    showFeedback(`Erreur: ${error.message}`, 'red');
+                }
+            });
+        });
+        
+        /**
+         * Gère l'action d'attaque via une transaction pour garantir la cohérence.
+         */
+        async function handleAttackAction() {
+            const targetId = attackTargetSelect.value;
+            if (!targetId) {
+                showFeedback("Veuillez sélectionner une cible valide.", 'red');
+                return;
+            }
+
+            const target = allCountries.find(c => c.id === targetId);
+            if (!target || target.health <= 0) {
+                showFeedback("Cible introuvable ou déjà conquise.", 'red');
+                return;
+            }
+            
+            // Calcul de l'impact: Militaire offensif vs Militaire défensif
+            const baseDamage = 15; // Dégâts de base
+            const damageBonus = currentCountryState.military * 0.3;
+            const damageReduction = target.military * 0.2;
+            
+            const finalDamage = Math.max(1, baseDamage + damageBonus - damageReduction);
+            
+            const targetRef = doc(db, COLLECTION_PATH, targetId);
+            
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const targetDoc = await transaction.get(targetRef);
+                    if (!targetDoc.exists()) throw "La cible n'existe plus.";
+                    const targetData = targetDoc.data();
+                    
+                    // Calculer le nouvel état de la cible
+                    const newHealth = Math.max(0, targetData.health - finalDamage);
+                    const newStability = Math.max(0, targetData.stability - 10); // L'attaque coûte toujours de la stabilité à la cible
+                    
+                    // Mettre à jour la cible
+                    transaction.update(targetRef, {
+                        health: newHealth,
+                        stability: newStability,
+                    });
+
+                    // Mettre à jour l'attaquant (réduire l'action restante)
+                    const newActionsLeft = Math.max(0, currentCountryState.actionsLeft - 1);
+                    transaction.update(myCountryRef, {
+                        actionsLeft: newActionsLeft
+                    });
+                });
+                
+                showFeedback(`Attaque réussie contre ${target.name} ! Dégâts infligés: ${finalDamage.toFixed(1)}.`, 'red');
+            } catch (error) {
+                console.error("Erreur de transaction d'attaque:", error);
+                showFeedback(`Erreur d'attaque: ${error}`, 'red');
+            }
+        }
+
+
+        endTurnBtn.addEventListener('click', async () => {
+            if (!currentCountryState) return;
+            
+            // Logique de fin de tour
+            const eco = currentCountryState.economy;
+            const stab = currentCountryState.stability;
+            const mil = currentCountryState.military;
+
+            // 1. Calcul du revenu/gain
+            const calculatedIncome = BASE_INCOME + Math.floor(eco / 10);
+            
+            // 2. Influence mutuelle et pénalités
+            // L'économie augmente la stabilité (bonus)
+            const ecoBonus = Math.floor(eco / 20); 
+            // La faible stabilité coûte de l'économie (pénalité)
+            const stabilityPenalty = stab < 20 ? 15 : 0; 
+            // La faible santé affecte l'économie
+            const healthPenalty = currentCountryState.health < 50 ? 10 : 0;
+
+            
+            const newEconomy = Math.max(0, eco + calculatedIncome - stabilityPenalty - healthPenalty);
+            const newStability = Math.min(MAX_STAT, stab + ecoBonus);
+            
+            const nextState = {
+                economy: Math.min(MAX_STAT, newEconomy),
+                stability: newStability,
+                military: mil,
+                health: currentCountryState.health, // La santé ne change pas passivement
+                actionsLeft: 1, // Réinitialiser les actions
+                lastTurnTimestamp: Date.now()
+            };
+
+            try {
+                await updateDoc(myCountryRef, nextState);
+                showFeedback(`Tour terminé ! Revenu généré: ${calculatedIncome}. Actions réinitialisées.`, 'purple');
+            } catch (error) {
+                console.error("Erreur de fin de tour:", error);
+                showFeedback(`Erreur de fin de tour: ${error.message}`, 'red');
+            }
+        });
+        
+        // --- Logique des Alliances ---
+
+        document.getElementById('joinAllianceBtn').addEventListener('click', async () => {
+            const allianceName = document.getElementById('allianceNameInput').value.trim();
+            if (!allianceName || allianceName.length < 3 || !currentCountryState || currentCountryState.health <= 0) {
+                showFeedback("Nom d'alliance invalide (min 3 caractères) ou pays conquis.", 'red');
+                return;
+            }
+
+            try {
+                await updateDoc(myCountryRef, { alliance: allianceName.toUpperCase() });
+                showFeedback(`Alliance "${allianceName.toUpperCase()}" rejointe/créée.`, 'purple');
+            } catch (error) {
+                console.error("Erreur d'alliance:", error);
+                showFeedback(`Erreur: ${error.message}`, 'red');
+            }
+        });
+
+        document.getElementById('leaveAllianceBtn').addEventListener('click', async () => {
+             if (!currentCountryState || currentCountryState.health <= 0) return;
+             
+             try {
+                await updateDoc(myCountryRef, { alliance: null });
+                showFeedback("Vous avez quitté l'alliance.", 'gray');
+            } catch (error) {
+                console.error("Erreur de désertion:", error);
+                showFeedback(`Erreur: ${error.message}`, 'red');
+            }
+        });
+
+
+        /**
+         * Affiche un message de feedback temporaire à l'utilisateur.
+         */
+        function showFeedback(message, color) {
+            actionFeedback.textContent = message;
+            actionFeedback.className = `mt-3 text-center text-sm font-medium h-4 text-${color}-600`;
+            setTimeout(() => { actionFeedback.textContent = ''; }, 3000);
+        }
+
+        // --- Éditeur de Drapeau (Pixel Canvas) ---
+
+        const canvas = document.getElementById('flagCanvas');
+        const ctx = canvas.getContext('2d');
+        const colorPicker = document.getElementById('colorPicker');
+        const saveFlagBtn = document.getElementById('saveFlagBtn');
+        const clearFlagBtn = document.getElementById('clearFlagBtn');
+        
+        const PIXEL_WIDTH = canvas.width / FLAG_COLS;
+        const PIXEL_HEIGHT = canvas.height / FLAG_ROWS;
+        let pixelData = []; // Stocke les couleurs des pixels 15x10
+
+        /**
+         * Initialise la grille de pixels avec une couleur par défaut.
+         */
+        function initFlagGrid() {
+            pixelData = [];
+            for (let i = 0; i < FLAG_COLS * FLAG_ROWS; i++) {
+                pixelData.push('#ffffff'); // Blanc par défaut
+            }
+            drawFlag();
+        }
+        initFlagGrid();
+
+        /**
+         * Dessine le drapeau dans le canvas d'édition.
+         */
+        function drawFlag() {
+            for (let r = 0; r < FLAG_ROWS; r++) {
+                for (let c = 0; c < FLAG_COLS; c++) {
+                    const index = r * FLAG_COLS + c;
+                    ctx.fillStyle = pixelData[index] || '#ffffff';
+                    ctx.fillRect(c * PIXEL_WIDTH, r * PIXEL_HEIGHT, PIXEL_WIDTH, PIXEL_HEIGHT);
+                    ctx.strokeStyle = '#e0e0e0'; // Lignes de grille
+                    ctx.strokeRect(c * PIXEL_WIDTH, r * PIXEL_HEIGHT, PIXEL_WIDTH, PIXEL_HEIGHT);
+                }
+            }
+        }
+        
+        /**
+         * Récupère les données de pixels actuelles.
+         */
+        function getFlagPixelData() {
+            return pixelData;
+        }
+
+        /**
+         * Charge les données du drapeau JSON depuis Firestore dans l'éditeur.
+         */
+        function loadFlagFromState(jsonFlag) {
+            try {
+                const data = JSON.parse(jsonFlag);
+                if (Array.isArray(data) && data.length === FLAG_COLS * FLAG_ROWS) {
+                    pixelData = data;
+                    drawFlag();
+                } else {
+                    initFlagGrid();
+                }
+            } catch (e) {
+                initFlagGrid();
+            }
+        }
+        
+        /**
+         * Dessine le drapeau sur une petite toile pour la liste du classement.
+         */
+        function drawFlagOnCanvas(targetCanvas, jsonFlag) {
+            const targetCtx = targetCanvas.getContext('2d');
+            const pW = targetCanvas.width / FLAG_COLS;
+            const pH = targetCanvas.height / FLAG_ROWS;
+            let data = [];
+            try {
+                data = JSON.parse(jsonFlag);
+            } catch (e) {
+                targetCtx.fillStyle = '#ccc'; // Couleur par défaut si JSON invalide
+                targetCtx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+                return; 
+            }
+
+            for (let r = 0; r < FLAG_ROWS; r++) {
+                for (let c = 0; c < FLAG_COLS; c++) {
+                    const index = r * FLAG_COLS + c;
+                    targetCtx.fillStyle = data[index] || '#ffffff';
+                    targetCtx.fillRect(c * pW, r * pH, pW, pH);
+                }
+            }
+        }
+
+        /**
+         * Gère les clics (souris ou toucher) sur le canvas pour colorer un pixel.
+         */
+        function handleCanvasClick(e) {
+            if (!currentCountryState) return;
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+            
+            if (e.touches) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+
+            // Calculer la colonne et la ligne du pixel cliqué
+            const col = Math.floor(x / PIXEL_WIDTH);
+            const row = Math.floor(y / PIXEL_HEIGHT);
+            
+            if (col >= 0 && col < FLAG_COLS && row >= 0 && row < FLAG_ROWS) {
+                const index = row * FLAG_COLS + col;
+                pixelData[index] = colorPicker.value;
+                drawFlag();
+            }
+        }
+
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleCanvasClick(e); });
+        clearFlagBtn.addEventListener('click', initFlagGrid);
+
+        saveFlagBtn.addEventListener('click', async () => {
+            if (!currentCountryState || currentCountryState.health <= 0) {
+                showFeedback("Veuillez d'abord créer ou rejoindre un pays, et assurez-vous qu'il ne soit pas conquis.", 'red');
+                return;
+            }
+
+            const newFlag = JSON.stringify(getFlagPixelData());
+            try {
+                await updateDoc(myCountryRef, { flag: newFlag });
+                showFeedback("Drapeau pixelisé sauvegardé et mis à jour !", 'green');
+            } catch (error) {
+                console.error("Erreur de sauvegarde du drapeau:", error);
+                showFeedback(`Erreur: ${error.message}`, 'red');
+            }
+        });
+        
+        // --- Logique des Bots (Intelligence Artificielle Simplifiée) ---
+
+        /**
+         * Exécute les actions des bots via une transaction pour éviter les conflits.
+         * Seulement un client (le premier) aura la permission de le faire.
+         */
+        async function processBotActions() {
+            if (!db) return;
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const metadataRef = doc(db, METADATA_DOC);
+                    const metadataDoc = await transaction.get(metadataRef);
+                    const now = Date.now();
+                    const lastBotRun = metadataDoc.exists() ? metadataDoc.data().lastBotRun || 0 : 0;
+                    
+                    // Verrouillage: Un seul client peut exécuter le cycle des bots par intervalle
+                    if (now - lastBotRun < BOT_CYCLE_INTERVAL_MS) {
+                        const nextRunIn = Math.floor((BOT_CYCLE_INTERVAL_MS - (now - lastBotRun)) / 1000);
+                        document.getElementById('botStatus').textContent = `Bots inactifs. Prochain cycle dans ${nextRunIn}s.`;
+                        return; 
+                    }
+
+                    document.getElementById('botStatus').textContent = "Bots en action...";
+                    
+                    // Marquer le début de l'exécution
+                    transaction.set(metadataRef, { lastBotRun: now, runningBy: userId }, { merge: true });
+
+                    const botCountries = allCountries.filter(c => c.isBot);
+                    
+                    for (const bot of botCountries) {
+                        if (bot.health <= 0) continue; // Ne pas agir si conquis
+
+                        let update = {};
+                        let actionTaken = false;
+                        
+                        // 1. Logique de Priorité (défense et stabilité d'abord)
+                        if (bot.health < 40 && bot.military < 50) {
+                            // Si faible en santé et militaire faible, se concentrer sur l'armée pour la défense
+                            update.military = Math.min(MAX_STAT, bot.military + 10);
+                            actionTaken = true;
+                        } else if (bot.stability < 30) {
+                            // Stabiliser
+                            update.stability = Math.min(MAX_STAT, bot.stability + 10);
+                            actionTaken = true;
+                        } else if (bot.military >= 70 && Math.random() > 0.4) {
+                            // 2. Logique d'Attaque (si fort)
+                            const potentialTargets = allCountries.filter(c => c.id !== bot.userId && c.health > 0 && c.alliance !== bot.alliance && !c.isBot);
+                            if (potentialTargets.length > 0) {
+                                // Choisir la cible la plus faible pour maximiser les chances
+                                potentialTargets.sort((a, b) => (a.health + a.military) - (b.health + b.military));
+                                const target = potentialTargets[0];
+
+                                const baseDamage = 15; 
+                                const damageBonus = bot.military * 0.3;
+                                const damageReduction = target.military * 0.2;
+                                const finalDamage = Math.max(1, baseDamage + damageBonus - damageReduction);
+                                
+                                const targetRef = doc(db, COLLECTION_PATH, target.userId);
+                                
+                                // Mettre à jour la cible
+                                transaction.update(targetRef, {
+                                    health: Math.max(0, target.health - finalDamage),
+                                    stability: Math.max(0, target.stability - 10) 
+                                });
+                                // On ne met pas à jour le log pour éviter de surcharger le chat
+                                actionTaken = true;
+                            }
+                        } else if (bot.economy < 60) {
+                            // 3. Investir/Développer
+                            update.economy = Math.min(MAX_STAT, bot.economy + 5);
+                            actionTaken = true;
+                        } else {
+                            // 4. Fin de tour normale (calcul des revenus)
+                            const calculatedIncome = BASE_INCOME + Math.floor(bot.economy / 10);
+                            const ecoBonus = Math.floor(bot.economy / 20);
+                            const stabilityPenalty = bot.stability < 20 ? 15 : 0; 
+                            const healthPenalty = bot.health < 50 ? 10 : 0;
+
+                            update.economy = Math.min(MAX_STAT, Math.max(0, bot.economy + calculatedIncome - stabilityPenalty - healthPenalty));
+                            update.stability = Math.min(MAX_STAT, bot.stability + ecoBonus);
+                            actionTaken = true;
+                        }
+                        
+                        // Appliquer les mises à jour pour le bot et réinitialiser les actions
+                        if (actionTaken) {
+                            const botRef = doc(db, COLLECTION_PATH, bot.userId);
+                            update.actionsLeft = 1; // Le bot utilise son action et réinitialise pour le tour suivant
+                            update.lastTurnTimestamp = now;
+                            transaction.update(botRef, update);
+                        }
+                    }
+                    document.getElementById('botStatus').textContent = "Bots terminés. Prochain cycle dans 60s.";
+                });
+            } catch (error) {
+                console.error("Erreur dans la boucle du bot (Transaction échouée):", error);
+                document.getElementById('botStatus').textContent = `Erreur Bot: Le cycle a échoué.`;
+            }
+        }
+        
+        // Démarrer l'application
+        initFirebase();
+    </script>
+</body>
+</html>
+
