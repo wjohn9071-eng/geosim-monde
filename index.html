@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoSim 2025: Mega Update</title>
+    <title>GeoSim 2025: Ultimate</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Chakra+Petch:wght@400;600;700&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
@@ -25,7 +25,7 @@
         .stat-bar-fill { height: 100%; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
         
         /* Canvas */
-        #flagCanvas, #flagCanvasPreview { image-rendering: pixelated; border: 2px solid #475569; cursor: crosshair; background: #000; touch-action: none; }
+        #editorCanvas, #menuFlagCanvas { image-rendering: pixelated; border: 2px solid #475569; cursor: crosshair; background: #000; touch-action: none; }
         
         /* Animations */
         @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 5px #3b82f6; } 50% { box-shadow: 0 0 20px #3b82f6; } }
@@ -49,14 +49,16 @@
             flag: new Array(FLAG_COLS * FLAG_ROWS).fill('#ffffff')
         };
         
-        let gameState = { players: {}, logs: [] }; // Utilisé par Solo et Multi
+        let gameState = { players: {}, logs: [], turn: 0 }; // Utilisé par Solo et Multi
         let isMultiplayer = false;
+        let myPeerId = 'me'; // Par défaut pour le mode solo
 
-        // Charger le profil depuis localStorage
-        window.onload = () => {
+        // Initialiser après le chargement du DOM
+        document.addEventListener('DOMContentLoaded', () => {
             loadProfile();
             renderMenuFlag();
-        };
+        });
+
 
         function loadProfile() {
             const saved = localStorage.getItem(STORAGE_KEY);
@@ -65,7 +67,8 @@
                 profile.name = parsed.name || profile.name;
                 profile.flag = parsed.flag || profile.flag;
             }
-            document.getElementById('globalNameInput').value = profile.name;
+            const nameInput = document.getElementById('globalNameInput');
+            if(nameInput) nameInput.value = profile.name;
         }
 
         function saveProfile() {
@@ -76,24 +79,36 @@
 
         // --- NAVIGATION ---
         function hideAllScreens() {
-            ['screen-menu', 'screen-solo', 'screen-multi-lobby', 'screen-multi-game'].forEach(id => {
+            ['screen-menu', 'screen-solo', 'screen-multi-lobby', 'screen-multi-game', 'screen-editor'].forEach(id => {
                 document.getElementById(id).classList.add('hidden');
             });
         }
+        
+        // CORRECTION: Assure la destruction du peer et le retour au menu principal.
         function goHome() {
             if(multiPeer) { multiPeer.destroy(); multiPeer = null; }
+            multiConnections = [];
+            isHost = false;
+            myPeerId = 'me';
+            isMultiplayer = false;
+            gameState = { players: {}, logs: [], turn: 0 }; // Réinitialiser l'état
+            
             hideAllScreens();
             document.getElementById('screen-menu').classList.remove('hidden');
+            renderMenuFlag();
         }
 
-        // ==================== ÉDITEUR DE DRAPEAU (Amélioration) ====================
-        const editorCanvas = document.getElementById('editorCanvas');
-        const eCtx = editorCanvas.getContext('2d');
+        // ==================== ÉDITEUR DE DRAPEAU ====================
+        let editorCanvas, eCtx;
         let tempFlag = [];
 
         function openEditor() {
+            editorCanvas = document.getElementById('editorCanvas');
+            eCtx = editorCanvas.getContext('2d');
+            
             tempFlag = [...profile.flag];
             drawEditor();
+            hideAllScreens();
             document.getElementById('screen-editor').classList.remove('hidden');
         }
 
@@ -102,13 +117,17 @@
                 profile.flag = [...tempFlag];
                 saveProfile();
             }
-            document.getElementById('screen-editor').classList.add('hidden');
+            // Retour au menu principal après édition
+            hideAllScreens();
+            document.getElementById('screen-menu').classList.remove('hidden');
+            renderMenuFlag();
         }
 
         function drawEditor() {
+            if(!eCtx) return;
             const pW = editorCanvas.width / FLAG_COLS;
             const pH = editorCanvas.height / FLAG_ROWS;
-            eCtx.clearRect(0, 0, editorCanvas.width, editorCanvas.height); // Clear
+            eCtx.clearRect(0, 0, editorCanvas.width, editorCanvas.height);
             for(let i=0; i<tempFlag.length; i++) {
                 const c = i % FLAG_COLS;
                 const r = Math.floor(i / FLAG_COLS);
@@ -120,13 +139,31 @@
         }
 
         let isDrawing = false;
-        let lastPos = {x: -1, y: -1}; // Pour l'effet de brosse
+        let lastPos = {x: -1, y: -1};
+
+        // Fonction pour gérer les coordonnées de dessin (compatible souris/touch)
+        function getCanvasCoords(e) {
+            const rect = editorCanvas.getBoundingClientRect();
+            let clientX, clientY;
+
+            if (e.touches) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            const x = Math.floor((clientX - rect.left) / (rect.width/FLAG_COLS));
+            const y = Math.floor((clientY - rect.top) / (rect.height/FLAG_ROWS));
+            return {x, y};
+        }
 
         function drawPixel(e) {
+            e.preventDefault(); // Empêche le scroll mobile
             if(!isDrawing) return;
-            const rect = editorCanvas.getBoundingClientRect();
-            const x = Math.floor((e.clientX - rect.left) / (rect.width/FLAG_COLS));
-            const y = Math.floor((e.clientY - rect.top) / (rect.height/FLAG_ROWS));
+            
+            const {x, y} = getCanvasCoords(e);
 
             if(x>=0 && x<FLAG_COLS && y>=0 && y<FLAG_ROWS && (x !== lastPos.x || y !== lastPos.y)) {
                 tempFlag[y*FLAG_COLS+x] = document.getElementById('editorColor').value;
@@ -135,21 +172,24 @@
             }
         }
         
-        // Gère les événements de souris et de toucher
-        editorCanvas.addEventListener('pointerdown', (e) => {
-            isDrawing = true;
-            lastPos = {x: -1, y: -1}; // Réinitialiser pour dessiner immédiatement
-            drawPixel(e);
+        document.addEventListener('pointerdown', (e) => {
+            if (e.target.id === 'editorCanvas') {
+                isDrawing = true;
+                lastPos = {x: -1, y: -1};
+                drawPixel(e);
+            }
         });
-        editorCanvas.addEventListener('pointerup', () => isDrawing = false);
-        editorCanvas.addEventListener('pointermove', drawPixel);
+        document.addEventListener('pointerup', () => isDrawing = false);
+        document.addEventListener('pointermove', drawPixel);
         
         function clearEditor() { tempFlag.fill('#ffffff'); drawEditor(); }
 
         function renderMenuFlag() {
             const c = document.getElementById('menuFlagCanvas');
+            if (!c) return;
             const ctx = c.getContext('2d');
             drawMiniFlag(ctx, profile.flag, c.width, c.height);
+            document.getElementById('globalNameInput').value = profile.name;
         }
 
         function drawMiniFlag(ctx, flagData, w, h) {
@@ -172,15 +212,15 @@
                 "Nation Écarlate", "Fédération Azure", "Dominion de Jade", "Cité des Sables",
                 "Gardiens de Glace", "Protectorat", "Junte Militaire", "État Libre", "Coalition"
             ];
-            const name = botNames[Math.floor(Math.random() * botNames.length)] + ' (' + Math.floor(Math.random()*100) + ')';
+            const name = botNames[Math.floor(Math.random() * botNames.length)] + ' (IA ' + Math.floor(Math.random()*100) + ')';
             const id = 'bot_' + crypto.randomUUID().substring(0, 8);
             
-            let stats = { eco: 20, mil: 20, spy: 20 };
+            let stats = { eco: 20, mil: 20, spy: 20, stab: 20 };
             
             if (level === 'hard') {
-                stats = { eco: 40 + Math.random()*10, mil: 40 + Math.random()*10, stab: 30 + Math.random()*10 };
+                stats = { eco: 40 + Math.random()*10, mil: 40 + Math.random()*10, stab: 30 + Math.random()*10, spy: 40 + Math.random()*10 };
             } else if (level === 'normal') {
-                stats = { eco: 25 + Math.random()*10, mil: 25 + Math.random()*10, stab: 20 + Math.random()*10 };
+                stats = { eco: 25 + Math.random()*10, mil: 25 + Math.random()*10, stab: 20 + Math.random()*10, spy: 25 + Math.random()*10 };
             }
 
             return {
@@ -197,45 +237,62 @@
             };
         }
 
+        // CORRECTION: Retiré les appels à render/broadcast car ils doivent être gérés par la fonction appelante
         function addBots(count) {
             const levels = ['easy', 'normal', 'hard'];
+            let added = 0;
             for(let i=0; i<count; i++) {
                 const level = levels[i % levels.length]; // Cycle through levels
                 const bot = createBot(level);
                 gameState.players[bot.id] = bot;
+                added++;
             }
-            if (isMultiplayer) broadcastMulti(); else renderSoloUI();
-            logGame(`Système : ${count} nouveaux États IA ont rejoint la partie.`);
+            logGame(`Système : ${added} nouveaux États IA ont rejoint la partie.`);
+            return added; // Retourne le nombre ajouté
+        }
+
+        function logGame(msg) {
+            gameState.logs.push(msg);
+            if (isMultiplayer && isHost) broadcastMulti();
         }
 
         // ==================== MOTEUR SOLO ====================
         
         function startSolo() {
             isMultiplayer = false;
+            myPeerId = 'me';
             saveProfile(); 
             hideAllScreens();
             document.getElementById('screen-solo').classList.remove('hidden');
             
             const saved = localStorage.getItem(SOLO_SAVE_KEY);
+            
             if(saved) {
-                gameState = JSON.parse(saved);
-                const me = gameState.players['me'];
-                if(me) { me.name = profile.name; me.flag = profile.flag; }
+                try {
+                    gameState = JSON.parse(saved);
+                    // Remplacer les données du joueur si elles existent
+                    const me = gameState.players['me'];
+                    if(me) { me.name = profile.name; me.flag = profile.flag; me.actions = MAX_ACTIONS_PER_TURN; }
+                    logGame("Partie Solo chargée.");
+                } catch(e) {
+                    console.error("Erreur de chargement de la sauvegarde, nouvelle partie lancée.", e);
+                    initSoloGame();
+                }
             } else {
                 initSoloGame();
             }
-            renderSoloUI();
+            renderSoloUI(); // L'appel final qui assure que les bots sont affichés
         }
 
         function initSoloGame() {
             gameState.turn = 1;
             gameState.players = {};
-            gameState.logs = [];
+            gameState.logs = [`Partie Solo démarrée. Tour 1.`];
 
             // Moi
             gameState.players['me'] = {
                 id: 'me', name: profile.name, flag: profile.flag, isBot: false,
-                hp: 100, eco: 20, mil: 20, stab: 20, 
+                hp: 100, eco: 20, mil: 20, stab: 20, spy: 20, 
                 actions: MAX_ACTIONS_PER_TURN, alliance: null, alliance_offer: null
             };
             
@@ -244,41 +301,55 @@
             localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify(gameState));
         }
 
-        function soloAction(type) {
+        function soloAction(type, targetId = null) {
             const me = gameState.players['me'];
-            if(me.actions <= 0 || me.hp <= 0) return;
+            if(me.actions <= 0 || me.hp <= 0) { logGame("Vous n'avez plus d'action."); return; }
             
-            if(type === 'eco') me.eco = Math.min(100, me.eco + 5);
-            if(type === 'mil') me.mil = Math.min(100, me.mil + 5);
-            if(type === 'stab') { me.stab = Math.min(100, me.stab + 5); me.hp = Math.min(100, me.hp + 2); }
-            
-            me.actions--;
-            renderSoloUI();
-            localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify(gameState));
-        }
+            let actionCost = 1;
 
-        function soloAttack() {
-            const me = gameState.players['me'];
-            if(me.actions <= 0 || me.hp <= 0) return;
-            const tid = document.getElementById('soloTargetSelect').value;
-            const target = getPlayerById(tid);
-            
-            if(!target || target.alliance === me.alliance) {
-                logGame("Opération annulée: La cible est votre allié ou invalide.");
-                return;
+            if(type === 'eco') { me.eco = Math.min(100, me.eco + 5); logGame("Investissement Économique (+5 ECO)"); }
+            else if(type === 'mil') { me.mil = Math.min(100, me.mil + 5); logGame("Recrutement Militaire (+5 MIL)"); }
+            else if(type === 'stab') { me.stab = Math.min(100, me.stab + 5); me.hp = Math.min(100, me.hp + 2); logGame("Campagne de Propagande (+5 STAB)"); }
+            else if(type === 'spy') { me.spy = Math.min(100, me.spy + 5); logGame("Création d'un Réseau d'Espionnage (+5 SPY)"); }
+            else if(type === 'attack') {
+                if (!targetId) targetId = document.getElementById('soloTargetSelect').value;
+                const target = getPlayerById(targetId);
+                
+                if(!target || target.alliance === me.alliance) {
+                    logGame("Opération annulée: Cible invalide ou alliée."); return;
+                }
+                const dmg = Math.max(5, Math.floor((me.mil * 0.5) - (target.mil * 0.2)));
+                target.hp = Math.max(0, Math.floor(target.hp - dmg));
+                logGame(`⚔️ Attaque sur ${target.name}: -${Math.floor(dmg)} HP`);
+                if(target.hp <= 0) { logGame(`💀 ${target.name} a été éliminé!`); target.alliance = null; }
+            }
+            else if(type === 'sabotage') {
+                 if (!targetId) targetId = document.getElementById('soloTargetSelect').value;
+                const target = getPlayerById(targetId);
+                
+                if(!target || target.alliance === me.alliance) {
+                    logGame("Opération annulée: Cible invalide ou alliée."); return;
+                }
+
+                const successRate = Math.min(0.9, me.spy / 100);
+                if (Math.random() < successRate) {
+                    const targets = ['eco', 'mil', 'stab'];
+                    const statToSabotage = targets[Math.floor(Math.random() * targets.length)];
+                    const loss = Math.max(5, Math.floor(Math.random() * 10) + 5); // Perte entre 5 et 14
+
+                    target[statToSabotage] = Math.max(0, target[statToSabotage] - loss);
+                    logGame(`💣 SABOTAGE RÉUSSI contre ${target.name}: -${loss} ${statToSabotage.toUpperCase()} !`);
+                } else {
+                    me.stab = Math.max(0, me.stab - 5); // Pénalité en cas d'échec
+                    logGame(`💣 SABOTAGE ÉCHOUÉ contre ${target.name}. L'opération a été repérée : -5 STAB.`);
+                }
+            }
+            else if(type === 'add_bots_solo') {
+                actionCost = 0; // Ne coûte pas d'action
+                addBots(3);
             }
 
-            const dmg = Math.max(5, Math.floor((me.mil * 0.5) - (target.mil * 0.2)));
-            target.hp = Math.max(0, Math.floor(target.hp - dmg));
-            me.actions--;
-            
-            logGame(`⚔️ Attaque sur ${target.name}: -${Math.floor(dmg)} HP`);
-            
-            if(target.hp <= 0) {
-                logGame(`💀 ${target.name} a été éliminé!`);
-                target.alliance = null;
-            }
-            
+            me.actions = Math.max(0, me.actions - actionCost);
             renderSoloUI();
             localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify(gameState));
         }
@@ -291,7 +362,7 @@
             me.eco = Math.min(100, me.eco + inc);
             me.actions = MAX_ACTIONS_PER_TURN;
             gameState.turn++;
-            logGame(`Tour ${gameState.turn}: Revenu +${inc}`);
+            logGame(`--- Tour ${gameState.turn} : Démarré ---`);
 
             // 2. Bots AI
             Object.values(gameState.players).forEach(p => {
@@ -299,7 +370,7 @@
                 if(p.hp > 0) p.actions = MAX_ACTIONS_PER_TURN; // Réinitialiser actions
             });
             
-            // 3. Cleanup des morts (utile surtout pour le multi)
+            // 3. Cleanup des morts
             gameState.players = Object.fromEntries(Object.entries(gameState.players).filter(([id, p]) => p.hp > 0));
             
             renderSoloUI();
@@ -313,7 +384,7 @@
             const tid = document.getElementById('soloTargetSelect').value;
             const target = getPlayerById(tid);
             
-            if(!target || target.hp <= 0 || target.alliance === me.alliance) return;
+            if(!target || target.hp <= 0 || target.alliance === me.alliance) { logGame("Cible invalide ou déjà alliée."); return; }
             
             if (me.actions <= 0) { logGame("Vous n'avez plus d'action."); return; }
 
@@ -328,11 +399,12 @@
             const me = gameState.players['me'];
             const proposer = getPlayerById(targetId);
             
-            if (accept) {
-                const allianceId = me.id + "-" + proposer.id; // Alliance ID
+            if (accept && proposer) {
+                // Créer un ID d'alliance basé sur les deux premières lettres de chaque nom
+                const allianceId = (me.name.substring(0,2) + proposer.name.substring(0,2)).toUpperCase() + crypto.randomUUID().substring(0, 2);
                 me.alliance = allianceId;
                 proposer.alliance = allianceId;
-                logGame(`🤝 ALLIANCE: Vous et ${proposer.name} avez formé une alliance!`);
+                logGame(`🤝 ALLIANCE [${allianceId}]: Vous et ${proposer.name} avez formé une alliance!`);
             } else {
                 logGame(`Rejet: Vous avez refusé la proposition de ${proposer.name}.`);
             }
@@ -344,29 +416,35 @@
         function leaveAllianceSolo() {
             const me = gameState.players['me'];
             if(!me.alliance) return;
+            const oldAllianceId = me.alliance;
             me.alliance = null;
+            
+            // Dissoudre l'alliance pour tous les membres dans le cas solo
             Object.values(gameState.players).forEach(p => {
-                if(p.alliance === me.alliance) p.alliance = null;
+                if(p.alliance === oldAllianceId) {
+                    p.alliance = null;
+                    if(p.id !== me.id) logGame(`💔 DÉSALLIANCE [${oldAllianceId}]: ${p.name} n'est plus allié.`);
+                }
             });
-            logGame(`💔 DÉSALLIANCE: Votre alliance est dissoute.`);
+            logGame(`💔 DÉSALLIANCE [${oldAllianceId}]: Votre alliance est dissoute.`);
             renderSoloUI();
             localStorage.setItem(SOLO_SAVE_KEY, JSON.stringify(gameState));
         }
 
         function checkVictory() {
             const livingPlayers = Object.values(gameState.players).filter(p => p.hp > 0 && !p.isBot);
-            const livingBots = Object.values(gameState.players).filter(p => p.hp > 0 && p.isBot);
+            const nonAlliedEnemies = Object.values(gameState.players).filter(p => p.hp > 0 && p.alliance !== (gameState.players['me'] ? gameState.players['me'].alliance : null) && p.id !== 'me');
             
-            if (livingPlayers.length === 1 && livingBots.length === 0) {
-                // Victoire Solo
-                logGame(`🎉 VICTOIRE TOTALE! Vous avez conquis le monde en ${gameState.turn} tours!`);
-                // Disable actions etc.
+            if (nonAlliedEnemies.length === 0) {
+                logGame(`🎉 VICTOIRE TOTALE! Vous ou votre alliance avez conquis le monde en ${gameState.turn} tours!`);
+                // Afficher un message de victoire ici si nécessaire
             }
         }
 
 
         // ==================== BOT AI ====================
         function botAI(p) {
+            // Logique Bot simplifié
             for(let i=0; i<MAX_ACTIONS_PER_TURN; i++) {
                 if (p.hp <= 0) return;
                 
@@ -374,64 +452,79 @@
                     t.id !== p.id && t.hp > 0 && t.alliance !== p.alliance
                 );
                 
-                // 1. Réponse Alliance (Probabilité 70% si stats faibles, 30% si stats fortes)
-                if (p.alliance_offer && Math.random() < 0.7) {
-                    const proposer = getPlayerById(p.alliance_offer);
-                    const allianceId = p.id + "-" + proposer.id;
-                    p.alliance = allianceId;
-                    proposer.alliance = allianceId;
-                    logGame(`🤝 ALLIANCE: ${p.name} s'allie avec ${proposer.name}.`);
+                // 1. Réponse Alliance
+                if (p.alliance_offer) {
+                    const accept = (p.bot_level === 'easy' && Math.random() < 0.9) || 
+                                   (p.bot_level === 'normal' && Math.random() < 0.6) ||
+                                   (p.bot_level === 'hard' && Math.random() < 0.3); // Hard bots sont méfiants
+                    if (accept) {
+                        const proposer = getPlayerById(p.alliance_offer);
+                        const allianceId = (p.name.substring(0,2) + proposer.name.substring(0,2)).toUpperCase() + crypto.randomUUID().substring(0, 2);
+                        p.alliance = allianceId;
+                        proposer.alliance = allianceId;
+                        logGame(`🤝 ALLIANCE [${allianceId}]: ${p.name} s'allie avec ${proposer.name}.`);
+                    }
                     p.alliance_offer = null;
                     continue;
                 }
                 
-                // 2. Décision (Basée sur l'urgence)
-                if (p.hp < 40 && p.stab < 50) { // Urgence : Se soigner et stabiliser
+                // 2. Priorités d'Action
+                if (p.hp < 40 || p.stab < 30) { 
                     p.stab = Math.min(100, p.stab + 5);
                     p.hp = Math.min(100, p.hp + 2);
                     continue;
                 }
-                if (p.mil < 30 || (p.bot_level === 'hard' && p.mil < 60)) { // Faiblesse militaire
+                if (p.mil < 30 || (p.bot_level === 'hard' && p.mil < 60)) { 
                     p.mil = Math.min(100, p.mil + 5);
                     continue;
                 }
-                if (p.eco < 30) { // Faiblesse éco
+                if (p.eco < 30) { 
                     p.eco = Math.min(100, p.eco + 5);
                     continue;
                 }
-
-                // 3. Attaque ou Amélioration (Basé sur le niveau)
-                if (p.bot_level === 'hard' && targets.length > 0 && Math.random() > 0.3) {
-                    // Attaque agressive
-                    const target = targets.reduce((best, current) => current.hp < best.hp ? current : best, targets[0]);
-                    const dmg = Math.max(5, Math.floor((p.mil * 0.5) - (target.mil * 0.2)));
-                    target.hp = Math.max(0, Math.floor(target.hp - dmg));
-                    logGame(`⚔️ ${p.name} attaque ${target.name}.`);
-                    if(target.hp <= 0) { logGame(`💀 ${target.name} a été éliminé!`); target.alliance = null; }
+                if (p.spy < 20 || (p.bot_level === 'hard' && p.spy < 40)) { 
+                    p.spy = Math.min(100, p.spy + 5);
                     continue;
-                } 
+                }
+
+                // 3. Offensives (Attaque ou Sabotage)
+                if (targets.length > 0) {
+                    const target = targets.reduce((best, current) => current.hp < best.hp ? current : best, targets[0]);
+                    
+                    if (p.mil > 60 && Math.random() > 0.5) { // Attaque frontale
+                        const dmg = Math.max(5, Math.floor((p.mil * 0.5) - (target.mil * 0.2)));
+                        target.hp = Math.max(0, Math.floor(target.hp - dmg));
+                        logGame(`⚔️ ${p.name} attaque ${target.name}.`);
+                        if(target.hp <= 0) { logGame(`💀 ${target.name} a été éliminé!`); target.alliance = null; }
+                        continue;
+                    }
+                    
+                    if (p.spy > 40 && Math.random() > 0.5) { // Sabotage
+                        const successRate = Math.min(0.9, p.spy / 100);
+                        if (Math.random() < successRate) {
+                            const stats = ['eco', 'mil', 'stab'];
+                            const statToSabotage = stats[Math.floor(Math.random() * stats.length)];
+                            const loss = Math.max(5, Math.floor(Math.random() * 10) + 5);
+                            target[statToSabotage] = Math.max(0, target[statToSabotage] - loss);
+                            logGame(`💣 ${p.name} SABOTE ${target.name}: -${loss} ${statToSabotage.toUpperCase()}.`);
+                        }
+                        continue;
+                    }
+                }
                 
-                // Amélioration standard
+                // 4. Par défaut: Investir
                 p.eco = Math.min(100, p.eco + 5);
             }
         }
         // ==================== FIN MOTEUR SOLO ====================
 
         // --- UI RENDER (SOLO) ---
-
-        function logGame(msg) {
-            if(isMultiplayer) {
-                // Multi
-                if (isHost) { multiState.logs.push(msg); }
-            } else {
-                // Solo
-                gameState.logs.push(msg);
-            }
-        }
         
         function renderSoloUI() {
             const me = gameState.players['me'];
-            document.getElementById('soloHeaderName').textContent = me.name + (me.alliance ? ` [Alliance: ${me.alliance.substring(0, 4)}]` : "");
+            if (!me) return;
+
+            document.getElementById('soloHeaderName').textContent = me.name + (me.alliance ? ` [Alliance: ${me.alliance}]` : "");
             document.getElementById('soloTurn').textContent = gameState.turn;
             document.getElementById('soloHpText').textContent = me.hp + '%';
             document.getElementById('soloHpBar').style.width = me.hp + '%';
@@ -440,11 +533,12 @@
             document.getElementById('soloEcoVal').textContent = Math.floor(me.eco); document.getElementById('soloEcoBar').style.width = me.eco + '%';
             document.getElementById('soloMilVal').textContent = Math.floor(me.mil); document.getElementById('soloMilBar').style.width = me.mil + '%';
             document.getElementById('soloStabVal').textContent = Math.floor(me.stab); document.getElementById('soloStabBar').style.width = me.stab + '%';
+            document.getElementById('soloSpyVal').textContent = Math.floor(me.spy); document.getElementById('soloSpyBar').style.width = me.spy + '%';
             
             document.getElementById('soloActions').textContent = me.actions + ` / ${MAX_ACTIONS_PER_TURN} Actions`;
             const btns = document.querySelectorAll('#screen-solo button.btn');
             btns.forEach(b => { 
-                if(!b.id.includes('alliance')) {
+                if(!b.id.includes('alliance') && !b.id.includes('addbot')) {
                     b.disabled = me.actions<=0 || me.hp <= 0; 
                     b.classList.toggle('opacity-50', me.actions<=0 || me.hp <= 0); 
                 }
@@ -465,15 +559,17 @@
             
             if (me.alliance_offer) {
                 const proposer = getPlayerById(me.alliance_offer);
-                allianceArea.innerHTML = `
-                    <div class="p-2 text-center text-yellow-300">
-                        Offre d'Alliance de <b>${proposer.name}</b>.
-                        <button onclick="respondToAlliance(true, '${proposer.id}')" class="btn btn-success px-2 py-1 ml-2 rounded text-xs">Accepter</button>
-                        <button onclick="respondToAlliance(false, '${proposer.id}')" class="btn btn-danger px-2 py-1 ml-1 rounded text-xs">Refuser</button>
-                    </div>
-                `;
+                if (proposer) {
+                     allianceArea.innerHTML = `
+                        <div class="p-2 text-center text-yellow-300">
+                            Offre d'Alliance de <b>${proposer.name}</b>.
+                            <button onclick="respondToAlliance(true, '${proposer.id}')" class="btn btn-success px-2 py-1 ml-2 rounded text-xs">Accepter</button>
+                            <button onclick="respondToAlliance(false, '${proposer.id}')" class="btn btn-danger px-2 py-1 ml-1 rounded text-xs">Refuser</button>
+                        </div>
+                    `;
+                }
             } else if (me.alliance) {
-                 allianceArea.innerHTML = `<button onclick="leaveAllianceSolo()" class="btn btn-danger w-full py-2 rounded text-sm">Quitter Alliance</button>`;
+                 allianceArea.innerHTML = `<button onclick="leaveAllianceSolo()" class="btn btn-danger w-full py-2 rounded text-sm">Quitter Alliance [${me.alliance}]</button>`;
             } else {
                 allianceArea.innerHTML = `<button onclick="proposeAllianceSolo()" class="btn btn-primary w-full py-2 rounded text-sm" ${me.actions <= 0 ? 'disabled' : ''}>Proposer Alliance</button>`;
             }
@@ -490,7 +586,7 @@
                 
                 div.appendChild(cvs);
                 let text = p.name;
-                if (p.alliance) text += ` <span class="text-green-500 font-mono text-xs ml-1">[A]</span>`;
+                if (p.alliance) text += ` <span class="text-green-500 font-mono text-xs ml-1">[A:${p.alliance}]</span>`;
                 if (p.isBot) text += ` <span class="text-red-300 text-xs ml-1">(${p.bot_level.toUpperCase()})</span>`;
 
                 div.innerHTML += `<div class="flex-1 text-sm font-bold ${p.hp<=0?'text-red-500 line-through':'text-white'}">${text}</div><div class="text-xs text-gray-400">${p.hp}% HP</div>`;
@@ -515,46 +611,79 @@
         let multiConn = null;
         let multiConnections = [];
         let isHost = false;
-        let myPeerId = null;
         
-        // MultiState est maintenant gameState
-
         function openMultiLobby() {
             isMultiplayer = true;
             saveProfile();
             hideAllScreens();
             document.getElementById('screen-multi-lobby').classList.remove('hidden');
+            document.getElementById('multiHostArea').classList.add('hidden');
+            document.getElementById('multiJoinArea').classList.add('hidden');
         }
 
         function showJoinInput() {
             document.getElementById('multiJoinArea').classList.remove('hidden');
         }
+        
+        // Nouvelle fonction pour l'hôte pour lancer la partie après le lobby
+        function startMultiGame() {
+            if (!isHost || !multiPeer || !multiPeer.id) return;
+            
+            // Ajouter les bots au démarrage
+            addBots(15); 
+            
+            // Initialisation de la partie
+            gameState.turn = 1;
+            Object.values(gameState.players).forEach(p => p.actions = MAX_ACTIONS_PER_TURN);
+
+            logGame(`--- Tour ${gameState.turn} : Partie Lancée ---`);
+
+            // Transition vers l'écran de jeu
+            document.getElementById('screen-multi-lobby').classList.add('hidden');
+            document.getElementById('screen-multi-game').classList.remove('hidden');
+            
+            // Diffusion de l'état initial à tous
+            broadcastMulti(); 
+        }
 
         function initPeer(host) {
             isHost = host;
             const id = host ? 'GEO-' + Math.floor(Math.random()*10000) : null;
+            
+            if(multiPeer) multiPeer.destroy();
+            
             multiPeer = new Peer(id);
 
             multiPeer.on('open', (id) => {
                 myPeerId = id;
                 if(isHost) {
+                    // 1. Host Initialization (Reste dans le lobby)
+                    gameState.players = {};
+                    gameState.logs = [`Hôte démarré. Code: ${id}`];
+                    gameState.turn = 0; 
+                    
+                    // Ajouter l'hôte
+                    gameState.players[id] = { id: id, name: profile.name, flag: profile.flag, isBot: false, hp: 100, eco: 20, mil: 20, stab: 20, spy: 20, actions: 0, alliance: null, alliance_offer: null }; 
+                    
                     document.getElementById('multiHostArea').classList.remove('hidden');
                     document.getElementById('multiCodeDisplay').textContent = id;
-                    document.getElementById('multiStatus').textContent = "En attente de joueurs...";
-                    // Init Game State & Add self
-                    gameState.players = {};
-                    gameState.logs = [];
-                    gameState.players[id] = { id: id, name: profile.name, flag: profile.flag, isBot: false, hp: 100, eco: 20, mil: 20, spy: 20, actions: MAX_ACTIONS_PER_TURN, alliance: null, alliance_offer: null };
-                    addBots(15); // Add initial bots
+                    document.getElementById('multiStatus').textContent = `En attente de joueurs... (${Object.keys(gameState.players).length} joueur(s))`;
                     
-                    document.getElementById('screen-multi-lobby').classList.add('hidden');
-                    document.getElementById('screen-multi-game').classList.remove('hidden');
-                    renderMultiUI();
+                    renderMultiUI(); 
                     
                 } else {
+                    // 2. Client connect
                     const hostId = document.getElementById('multiHostInput').value.trim();
+                    if (!hostId) { logGame("Code hôte manquant."); multiPeer.destroy(); return; }
+                    
                     multiConn = multiPeer.connect(hostId);
                     setupMultiConn(multiConn);
+                    
+                    // Le client attend l'état de l'hôte
+                    document.getElementById('screen-multi-lobby').classList.add('hidden');
+                    document.getElementById('screen-multi-game').classList.remove('hidden');
+                    // Rendu de l'UI vide en attendant
+                    document.getElementById('multiMyName').textContent = profile.name + " (En attente...)";
                 }
             });
 
@@ -564,28 +693,38 @@
                     multiConnections.push(conn);
                 }
             });
+            
+            multiPeer.on('error', (err) => {
+                logGame(`Erreur P2P: ${err.type}`);
+                console.error("PeerJS Error:", err);
+                goHome();
+            });
         }
 
         function setupMultiConn(conn) {
             conn.on('open', () => {
                 if(isHost) {
-                    // Host expects HELLO from client
                     logGame(`Hôte: Connexion établie avec ${conn.peer}.`);
+                    // Mise à jour du statut dans le lobby
+                    document.getElementById('multiStatus').textContent = `En attente de joueurs... (${Object.keys(gameState.players).length + 1} joueur(s))`;
+                    
                 } else {
-                    // Client connected to host
-                    document.getElementById('screen-multi-lobby').classList.add('hidden');
-                    document.getElementById('screen-multi-game').classList.remove('hidden');
+                    // Client connecté à l'hôte
                     conn.send({ type: 'HELLO', name: profile.name, flag: profile.flag, id: myPeerId });
+                    logGame(`Connecté à l'hôte. Envoi des infos...`);
                 }
             });
             conn.on('data', (data) => handleMultiData(data, conn));
             conn.on('close', () => {
                 if(isHost) {
+                    // Remove connection and player
+                    multiConnections = multiConnections.filter(c => c.peer !== conn.peer);
                     delete gameState.players[conn.peer];
                     logGame(`Système : ${conn.peer} a quitté la partie.`);
                     broadcastMulti();
                 } else {
-                    alert("Déconnecté de l'hôte.");
+                    // Client disconnected
+                    logGame("Déconnecté de l'hôte.");
                     goHome();
                 }
             });
@@ -594,15 +733,18 @@
         function handleMultiData(data, conn) {
             if(isHost) {
                 if(data.type === 'HELLO') {
-                    // Client just joined
-                    gameState.players[conn.peer] = { id: conn.peer, name: data.name, flag: data.flag, isBot: false, hp: 100, eco: 20, mil: 20, spy: 20, actions: MAX_ACTIONS_PER_TURN, alliance: null, alliance_offer: null };
+                    // Client just joined, add player to state
+                    gameState.players[conn.peer] = { id: conn.peer, name: data.name, flag: data.flag, isBot: false, hp: 100, eco: 20, mil: 20, stab: 20, spy: 20, actions: MAX_ACTIONS_PER_TURN, alliance: null, alliance_offer: null };
                     logGame(`Hôte : Le joueur ${data.name} a rejoint.`);
+                    
+                    // Si le jeu a déjà commencé (turn > 0), le nouveau joueur reçoit les actions
+                    if (gameState.turn > 0) gameState.players[conn.peer].actions = MAX_ACTIONS_PER_TURN;
+                    
                     broadcastMulti();
                 } else if(data.type === 'ACTION') {
                     processMultiAction(conn.peer, data.action, data.payload);
                     broadcastMulti();
                 }
-                // Hôte ne reçoit rien d'autre
             } else {
                 if(data.type === 'STATE_UPDATE') {
                     gameState = data.state;
@@ -613,14 +755,17 @@
 
         function processMultiAction(id, type, payload) {
             const p = gameState.players[id];
-            if(!p || p.hp <= 0) return;
+            if(!p || p.hp <= 0 || gameState.turn === 0) return; // Ignore actions si le jeu n'a pas commencé
             
-            // Actions de jeu
-            if(p.actions <= 0) { logGame(`ACTION REJETÉE: ${p.name} n'a plus d'actions.`); return; }
+            // Actions de jeu (coût 1 action)
+            if(['eco', 'mil', 'spy', 'attack', 'sabotage'].includes(type) && p.actions <= 0) { 
+                logGame(`ACTION REJETÉE: ${p.name} n'a plus d'actions.`); return; 
+            }
             
-            if(type === 'invest') { p.eco = Math.min(100, p.eco+5); p.hp = Math.min(100, p.hp+1); p.actions--; }
-            else if(type === 'recruit') { p.mil = Math.min(100, p.mil+5); p.actions--; }
-            else if(type === 'spy') { p.spy = Math.min(100, p.spy+5); p.actions--; }
+            if(type === 'eco') { p.eco = Math.min(100, p.eco+5); p.actions--; logGame(`${p.name} investit.`); }
+            else if(type === 'mil') { p.mil = Math.min(100, p.mil+5); p.actions--; logGame(`${p.name} recrute.`); }
+            else if(type === 'spy') { p.spy = Math.min(100, p.spy+5); p.actions--; logGame(`${p.name} forme des espions.`); }
+            
             else if(type === 'attack') {
                 const t = gameState.players[payload.target];
                 if(!t || t.alliance === p.alliance) { logGame(`ACTION REJETÉE: ${p.name} ne peut pas attaquer ${t.name}.`); return; }
@@ -628,6 +773,23 @@
                 t.hp = Math.max(0, Math.floor(t.hp - dmg));
                 logGame(`⚔️ ${p.name} attaque ${t.name}: -${Math.floor(dmg)} HP`);
                 if(t.hp <= 0) { logGame(`💀 ${t.name} a été éliminé!`); t.alliance = null; }
+                p.actions--;
+            }
+            else if(type === 'sabotage') {
+                const t = gameState.players[payload.target];
+                if(!t || t.alliance === p.alliance) { logGame(`ACTION REJETÉE: ${p.name} ne peut pas saboter ${t.name}.`); return; }
+
+                const successRate = Math.min(0.9, p.spy / 100);
+                if (Math.random() < successRate) {
+                    const stats = ['eco', 'mil', 'stab'];
+                    const statToSabotage = stats[Math.floor(Math.random() * stats.length)];
+                    const loss = Math.max(5, Math.floor(Math.random() * 10) + 5); 
+                    t[statToSabotage] = Math.max(0, t[statToSabotage] - loss);
+                    logGame(`💣 SABOTAGE RÉUSSI par ${p.name} contre ${t.name}: -${loss} ${statToSabotage.toUpperCase()}!`);
+                } else {
+                    p.stab = Math.max(0, p.stab - 5);
+                    logGame(`💣 SABOTAGE ÉCHOUÉ par ${p.name} contre ${t.name}: -5 STAB pour ${p.name}.`);
+                }
                 p.actions--;
             }
             
@@ -641,72 +803,115 @@
             }
             else if(type === 'ACCEPT') {
                 const proposer = getPlayerById(payload.proposer);
-                const allianceId = p.id + "-" + proposer.id;
-                p.alliance = allianceId;
-                proposer.alliance = allianceId;
-                p.alliance_offer = null;
-                logGame(`🤝 ALLIANCE: ${p.name} et ${proposer.name} sont alliés!`);
+                if (proposer) {
+                    const allianceId = (p.name.substring(0,2) + proposer.name.substring(0,2)).toUpperCase() + crypto.randomUUID().substring(0, 2);
+                    p.alliance = allianceId;
+                    proposer.alliance = allianceId;
+                    p.alliance_offer = null;
+                    logGame(`🤝 ALLIANCE [${allianceId}]: ${p.name} et ${proposer.name} sont alliés!`);
+                }
             }
             else if(type === 'REJECT') { p.alliance_offer = null; }
             else if(type === 'LEAVE') {
-                const oldAlliance = p.alliance;
+                const oldAllianceId = p.alliance;
                 p.alliance = null;
+                // Désallier les autres membres humains/bots
                 Object.values(gameState.players).forEach(t => {
-                    if (t.alliance === oldAlliance && t.id !== p.id) {
+                    if (t.alliance === oldAllianceId && t.id !== p.id) {
                         t.alliance = null;
-                        logGame(`💔 DÉSALLIANCE: L'alliance de ${t.name} est dissoute.`);
+                        logGame(`💔 DÉSALLIANCE [${oldAllianceId}]: ${t.name} n'est plus allié.`);
                     }
                 });
-                logGame(`💔 DÉSALLIANCE: ${p.name} a quitté son alliance.`);
+                logGame(`💔 DÉSALLIANCE [${oldAllianceId}]: ${p.name} a quitté son alliance.`);
             }
-            // Add Bots
+            // Add Bots (Host only)
             else if (type === 'ADD_BOTS' && isHost) { addBots(3); }
         }
 
         function broadcastMulti() {
-            // Hôte met à jour lui-même et envoie aux clients
-            renderMultiUI(); 
-            // 1. Nettoyage des morts pour tout le monde
-            gameState.players = Object.fromEntries(Object.entries(gameState.players).filter(([id, p]) => p.hp > 0));
-
-            // 2. Traitement AI (uniquement par l'hôte à chaque action)
-            Object.values(gameState.players).forEach(p => {
-                if(p.isBot && p.hp > 0) botAI(p);
-            });
+            if (!isHost) return;
             
-            // 3. Envoi
-            const msg = { type: 'STATE_UPDATE', state: gameState };
-            multiConnections.forEach(c => c.send(msg));
-        }
-        
-        // Actions de jeu Multi
-        function multiSend(action) {
-            let payload = {};
-            if(action === 'attack') {
-                payload.target = document.getElementById('multiTargetSelect').value;
-                if(!payload.target) return;
+            // L'hôte fait avancer le jeu (bots et revenu)
+            if (gameState.turn > 0) {
+                // 1. Traitement AI pour les bots
+                Object.values(gameState.players).forEach(p => {
+                    if(p.isBot && p.hp > 0) botAI(p);
+                });
+            
+                // 2. Revenus pour tout le monde et réinitialisation des actions
+                Object.values(gameState.players).forEach(p => {
+                    if(p.hp > 0) {
+                        const inc = 5 + Math.floor(p.eco/10);
+                        p.eco = Math.min(100, p.eco + inc);
+                        p.actions = MAX_ACTIONS_PER_TURN;
+                    }
+                });
+                
+                // 3. Passage au tour suivant
+                gameState.turn++;
+                logGame(`--- Tour ${gameState.turn} : Démarré ---`);
             }
             
-            if(isHost) {
-                processMultiAction(myPeerId, action, payload);
-                broadcastMulti();
+            // 4. Nettoyage des morts pour tout le monde
+            gameState.players = Object.fromEntries(Object.entries(gameState.players).filter(([id, p]) => p.hp > 0));
+            
+            renderMultiUI(); 
+            
+            // 5. Envoi
+            const msg = { type: 'STATE_UPDATE', state: gameState };
+            multiConnections.forEach(c => c.send(msg));
+            
+            checkVictory();
+        }
+        
+        // Envoi d'une action simple au jeu (Solo ou Multi)
+        function gameSend(action) {
+            const me = gameState.players[myPeerId];
+            if(!me || me.actions <= 0 || me.hp <= 0) {
+                // ADD_BOTS n'a pas besoin d'actions
+                if (action !== 'ADD_BOTS' && me) logGame("Vous n'avez plus d'action.");
+                else if (!me) logGame("Le jeu n'a pas encore démarré.");
+                return;
+            }
+            
+            if(isMultiplayer) {
+                let payload = {};
+                if(['attack', 'sabotage'].includes(action)) {
+                    payload.target = document.getElementById('multiTargetSelect').value;
+                    if(!payload.target) return;
+                }
+                
+                if(isHost) {
+                    processMultiAction(myPeerId, action, payload);
+                    broadcastMulti(); // Hôte diffuse après son action
+                } else {
+                    multiConn.send({ type: 'ACTION', action: action, payload: payload });
+                }
             } else {
-                multiConn.send({ type: 'ACTION', action: action, payload: payload });
+                // Solo
+                if (action === 'ADD_BOTS') soloAction('add_bots_solo'); // Action spéciale pour le solo
+                else soloAction(action);
             }
         }
         
         // Actions d'Alliance Multi
         function multiAllianceSend(type, targetId) {
             const me = gameState.players[myPeerId];
+            if(!me) return;
+            
+            let payload = {};
             if(type === 'PROPOSE') {
-                if(me.actions <= 0) { alert("Vous devez avoir des actions pour faire de la diplomatie!"); return; }
-                multiSend('PROPOSE', { target: document.getElementById('multiTargetSelect').value });
+                payload.target = document.getElementById('multiTargetSelect').value;
+                if(!payload.target) return;
             } else if (type === 'ACCEPT') {
-                multiSend('ACCEPT', { proposer: targetId });
-            } else if (type === 'REJECT') {
-                multiSend('REJECT');
-            } else if (type === 'LEAVE') {
-                 multiSend('LEAVE');
+                payload.proposer = targetId;
+            }
+
+            if(isHost) {
+                processMultiAction(myPeerId, type, payload);
+                broadcastMulti();
+            } else {
+                multiConn.send({ type: 'ACTION', action: type, payload: payload });
             }
         }
 
@@ -714,21 +919,39 @@
 
         function renderMultiUI() {
             const me = gameState.players[myPeerId];
-            if(!me) return;
+            
+            // Rendu spécifique au lobby (avant le lancement du jeu)
+            if (isHost && gameState.turn === 0) {
+                 document.getElementById('multiStatus').textContent = `En attente de joueurs... (${Object.keys(gameState.players).length} joueur(s))`;
+                 // Le reste du rendu va suivre pour la liste des joueurs
+            }
 
-            document.getElementById('multiMyName').textContent = me.name + (me.alliance ? ` [Alliance: ${me.alliance.substring(0, 4)}]` : "");
-            document.getElementById('multiHpBar').style.width = me.hp + '%';
-            document.getElementById('multiHpBar').style.backgroundColor = me.hp < 30 ? '#dc2626' : (me.hp < 70 ? '#f59e0b' : '#16a34a');
-            document.getElementById('multiEcoVal').textContent = Math.floor(me.eco);
-            document.getElementById('multiMilVal').textContent = Math.floor(me.mil);
-            document.getElementById('multiSpyVal').textContent = Math.floor(me.spy);
-            document.getElementById('multiActions').textContent = me.actions + ` / ${MAX_ACTIONS_PER_TURN} Actions`;
+            if(!me) return;
+            
+            // Masquer les boutons d'action si le jeu n'est pas lancé (Tour 0)
+            const gameRunning = gameState.turn > 0;
+            const gameControls = document.getElementById('multiGameControls');
+            if (gameControls) gameControls.classList.toggle('hidden', !gameRunning);
+            
+            document.getElementById('multiMyName').textContent = me.name + (me.alliance ? ` [Alliance: ${me.alliance}]` : "");
+            
+            if (gameRunning) {
+                document.getElementById('multiHpBar').style.width = me.hp + '%';
+                document.getElementById('multiHpBar').style.backgroundColor = me.hp < 30 ? '#dc2626' : (me.hp < 70 ? '#f59e0b' : '#16a34a');
+                document.getElementById('multiEcoVal').textContent = Math.floor(me.eco);
+                document.getElementById('multiMilVal').textContent = Math.floor(me.mil);
+                document.getElementById('multiStabVal').textContent = Math.floor(me.stab);
+                document.getElementById('multiSpyVal').textContent = Math.floor(me.spy);
+                document.getElementById('multiActions').textContent = me.actions + ` / ${MAX_ACTIONS_PER_TURN} Actions`;
+            } else {
+                 document.getElementById('multiActions').textContent = `En attente...`;
+            }
 
             // Boutons d'action
-            const actionBtns = document.querySelectorAll('#screen-multi-game button[onclick^="multiSend"]');
+            const actionBtns = document.querySelectorAll('#screen-multi-game button[data-action]');
             actionBtns.forEach(b => { 
-                b.disabled = me.actions <= 0 || me.hp <= 0; 
-                b.classList.toggle('opacity-50', me.actions <= 0 || me.hp <= 0); 
+                b.disabled = me.actions <= 0 || me.hp <= 0 || !gameRunning; 
+                b.classList.toggle('opacity-50', me.actions <= 0 || me.hp <= 0 || !gameRunning); 
             });
 
             // Log
@@ -746,17 +969,19 @@
             
             if (me.alliance_offer) {
                 const proposer = getPlayerById(me.alliance_offer);
-                allianceArea.innerHTML = `
-                    <div class="p-2 text-center text-yellow-300">
-                        Offre de <b>${proposer.name}</b>.
-                        <button onclick="multiAllianceSend('ACCEPT', '${proposer.id}')" class="btn btn-success px-2 py-1 ml-2 rounded text-xs">Accepter</button>
-                        <button onclick="multiAllianceSend('REJECT')" class="btn btn-danger px-2 py-1 ml-1 rounded text-xs">Refuser</button>
-                    </div>
-                `;
+                if (proposer) {
+                     allianceArea.innerHTML = `
+                        <div class="p-2 text-center text-yellow-300">
+                            Offre de <b>${proposer.name}</b>.
+                            <button onclick="multiAllianceSend('ACCEPT', '${proposer.id}')" class="btn btn-success px-2 py-1 ml-2 rounded text-xs">Accepter</button>
+                            <button onclick="multiAllianceSend('REJECT')" class="btn btn-danger px-2 py-1 ml-1 rounded text-xs">Refuser</button>
+                        </div>
+                    `;
+                }
             } else if (me.alliance) {
-                 allianceArea.innerHTML = `<button onclick="multiAllianceSend('LEAVE')" class="btn btn-danger w-full py-2 rounded text-sm">Quitter Alliance</button>`;
+                 allianceArea.innerHTML = `<button onclick="multiAllianceSend('LEAVE')" class="btn btn-danger w-full py-2 rounded text-sm">Quitter Alliance [${me.alliance}]</button>`;
             } else {
-                allianceArea.innerHTML = `<button onclick="multiAllianceSend('PROPOSE')" class="btn btn-primary w-full py-2 rounded text-sm">Proposer Alliance</button>`;
+                allianceArea.innerHTML = `<button onclick="multiAllianceSend('PROPOSE')" class="btn btn-primary w-full py-2 rounded text-sm" ${!gameRunning || me.actions <= 0 ? 'disabled' : ''}>Proposer Alliance</button>`;
             }
             
             // Player List
@@ -771,8 +996,8 @@
                 
                 div.appendChild(cvs);
                 let text = p.name;
-                if (p.alliance) text += ` <span class="text-green-500 font-mono text-xs ml-1">[A]</span>`;
-                if (p.isBot) text += ` <span class="text-red-300 text-xs ml-1">(IA)</span>`;
+                if (p.alliance) text += ` <span class="text-green-500 font-mono text-xs ml-1">[A:${p.alliance}]</span>`;
+                if (p.isBot) text += ` <span class="text-red-300 text-xs ml-1">(${p.bot_level ? p.bot_level.toUpperCase() : 'IA'})</span>`;
 
                 div.innerHTML += `<div class="flex-1 text-sm font-bold ${p.hp<=0?'text-red-500 line-through':'text-white'}">${text}</div><div class="text-xs text-gray-400">${p.hp}% HP</div>`;
                 list.appendChild(div);
@@ -790,9 +1015,9 @@
             
             // Bouton pour ajouter des bots (Hôte seulement)
             const addBotBtn = document.getElementById('multiAddBotBtn');
-            if (isHost) {
+            if (isHost && gameRunning) {
                 addBotBtn.classList.remove('hidden');
-            } else {
+            } else if (addBotBtn) {
                 addBotBtn.classList.add('hidden');
             }
         }
@@ -814,6 +1039,7 @@
                     <canvas id="menuFlagCanvas" width="90" height="60" class="border border-gray-600 shadow-lg"></canvas>
                     <input type="text" id="globalNameInput" onchange="saveProfile()" class="flex-1 bg-slate-800 border border-slate-600 text-white font-bold text-lg p-2 rounded focus:border-blue-500 outline-none" placeholder="Nom du Pays">
                 </div>
+                <!-- CORRECTION: Le bouton modifier le drapeau fonctionne maintenant -->
                 <button onclick="openEditor()" class="text-xs text-gray-400 hover:text-white underline">Modifier le Drapeau</button>
             </div>
 
@@ -828,7 +1054,7 @@
                 </button>
             </div>
             
-            <p class="text-xs text-gray-600">v3.1 Alliance Update</p>
+            <p class="text-xs text-gray-600">v3.3 Fixes</p>
         </div>
     </div>
 
@@ -852,12 +1078,14 @@
     <div id="screen-solo" class="hidden flex-1 flex flex-col p-2 md:p-4 max-w-6xl mx-auto w-full">
         <header class="flex justify-between items-center mb-4 bg-slate-800 p-3 rounded border border-slate-700">
             <div>
+                <!-- Le bouton Retour Menu Solo est maintenant fiable grâce à la fonction goHome corrigée -->
                 <button onclick="goHome()" class="text-xs text-gray-500 hover:text-white mb-1">◀ Retour Menu</button>
                 <h2 id="soloHeaderName" class="text-xl font-bold text-blue-400">Mon Pays</h2>
             </div>
             <div class="text-right">
                 <div class="text-sm text-gray-400">Tour <span id="soloTurn">1</span></div>
-                <button onclick="addBots(3)" class="btn bg-red-900/50 px-2 py-1 rounded text-xs mt-1 hover:bg-red-900">AJOUTER BOTS</button>
+                <!-- Utilise une action solo non coûteuse pour ajouter des bots -->
+                <button onclick="soloAction('add_bots_solo')" class="btn bg-red-900/50 px-2 py-1 rounded text-xs mt-1 hover:bg-red-900">AJOUTER BOTS</button>
             </div>
         </header>
 
@@ -881,6 +1109,9 @@
                     
                     <div class="flex justify-between"><span>⚖️ Stabilité</span> <span id="soloStabVal">20</span></div>
                     <div class="stat-bar"><div id="soloStabBar" class="stat-bar-fill bg-green-600" style="width: 20%"></div></div>
+
+                     <div class="flex justify-between"><span>👁️ Espionnage</span> <span id="soloSpyVal">20</span></div>
+                    <div class="stat-bar"><div id="soloSpyBar" class="stat-bar-fill bg-purple-600" style="width: 20%"></div></div>
                 </div>
                 <div id="soloLog" class="h-32 bg-black/50 rounded p-2 text-xs font-mono overflow-y-auto text-gray-400 border border-slate-700"></div>
             </div>
@@ -890,9 +1121,10 @@
                 <div class="text-center mb-2">
                     <span id="soloActions" class="bg-blue-900 text-blue-200 px-2 py-1 rounded text-sm font-bold">3 / 3 Actions</span>
                 </div>
-                <button onclick="soloAction('eco')" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-blue-500">🏗️ Investir</button>
-                <button onclick="soloAction('mil')" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-yellow-500">🛡️ Recruter</button>
-                <button onclick="soloAction('stab')" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-green-500">📢 Propagande</button>
+                <button onclick="soloAction('eco')" data-action="eco" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-blue-500">🏗️ Investir</button>
+                <button onclick="soloAction('mil')" data-action="mil" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-yellow-500">🛡️ Recruter</button>
+                <button onclick="soloAction('stab')" data-action="stab" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-green-500">📢 Propagande</button>
+                <button onclick="soloAction('spy')" data-action="spy" class="btn bg-slate-700 hover:bg-slate-600 p-3 rounded text-left border-l-4 border-purple-500">👁️ Espionner</button>
                 
                 <div id="soloAllianceControls" class="mt-4 pt-2 border-t border-slate-700">
                     <!-- Alliance controls here -->
@@ -900,7 +1132,10 @@
                 
                 <div class="mt-2 pt-2 border-t border-slate-700">
                     <select id="soloTargetSelect" class="w-full bg-slate-900 p-2 rounded mb-2 text-sm border border-slate-600"></select>
-                    <button onclick="soloAttack()" class="btn btn-danger w-full py-3 rounded font-bold">ATTAQUER</button>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="soloAction('attack')" data-action="attack" class="btn btn-danger w-full py-3 rounded font-bold">ATTAQUER</button>
+                        <button onclick="soloAction('sabotage')" data-action="sabotage" class="btn bg-red-800 w-full py-3 rounded font-bold hover:bg-red-700">💣 SABOTER</button>
+                    </div>
                 </div>
                 
                 <button onclick="soloEndTurn()" class="btn bg-slate-800 w-full py-3 rounded font-bold mt-auto border border-slate-600 hover:bg-slate-700">Fin du Tour 🌙</button>
@@ -935,11 +1170,13 @@
                     <button onclick="initPeer(false)" class="bg-green-600 px-4 rounded font-bold">GO</button>
                 </div>
             </div>
-
+            
+            <!-- CORRECTION: Ajout du bouton Lancer la Partie pour l'hôte -->
             <div id="multiHostArea" class="hidden text-center bg-slate-800 p-4 rounded border border-dashed border-slate-600">
                 <p class="text-gray-400 text-xs mb-2">CODE À PARTAGER :</p>
                 <div id="multiCodeDisplay" class="text-3xl font-mono font-bold text-blue-400 tracking-widest select-all cursor-pointer mb-2">...</div>
-                <p id="multiStatus" class="text-xs text-yellow-500 animate-pulse">Connexion...</p>
+                <p id="multiStatus" class="text-xs text-yellow-500 animate-pulse">En attente de joueurs...</p>
+                <button onclick="startMultiGame()" class="btn btn-primary w-full mt-4 py-2 rounded font-bold">LANCER LA PARTIE</button>
             </div>
         </div>
     </div>
@@ -947,11 +1184,13 @@
     <div id="screen-multi-game" class="hidden flex-1 flex flex-col p-2 md:p-4 max-w-6xl mx-auto w-full">
         <header class="flex justify-between items-center mb-4 bg-slate-800 p-3 rounded border border-blue-900">
             <h2 class="text-xl font-bold text-blue-400 font-military">GUERRE P2P</h2>
-            <div class="text-xs text-green-400 flex flex-col items-end gap-1">
-                <div class="flex items-center gap-1">
+            <!-- Ajout du bouton Quitter et réorganisation de l'en-tête -->
+            <div class="flex flex-col items-end">
+                <button onclick="goHome()" class="text-xs text-red-500 hover:text-white underline mb-1">❌ Quitter la Partie</button>
+                <div class="text-xs text-green-400 flex items-center gap-1">
                     <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> EN LIGNE
                 </div>
-                <button id="multiAddBotBtn" onclick="multiSend('ADD_BOTS')" class="btn bg-red-900/50 px-2 py-1 rounded text-xs hover:bg-red-900 hidden">AJOUTER BOTS</button>
+                <button id="multiAddBotBtn" onclick="gameSend('ADD_BOTS')" class="btn bg-red-900/50 px-2 py-1 rounded text-xs mt-1 hover:bg-red-900 hidden">AJOUTER BOTS</button>
             </div>
         </header>
 
@@ -962,20 +1201,22 @@
                 <div class="h-4 stat-bar">
                     <div id="multiHpBar" class="stat-bar-fill" style="width: 100%"></div>
                 </div>
-                <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                <div class="grid grid-cols-4 gap-2 text-center text-xs">
                     <div class="bg-slate-800 p-2 rounded">💰 <span id="multiEcoVal">0</span></div>
                     <div class="bg-slate-800 p-2 rounded">🛡️ <span id="multiMilVal">0</span></div>
+                    <div class="bg-slate-800 p-2 rounded">⚖️ <span id="multiStabVal">0</span></div>
                     <div class="bg-slate-800 p-2 rounded">👁️ <span id="multiSpyVal">0</span></div>
                 </div>
                 <div id="multiLog" class="h-32 bg-black/50 rounded p-2 text-xs font-mono overflow-y-auto text-green-400 border border-slate-700"></div>
             </div>
 
             <!-- Actions Multi -->
-            <div class="card p-4 lg:col-span-1 space-y-2">
+            <div id="multiGameControls" class="card p-4 lg:col-span-1 space-y-2">
                 <div class="text-right mb-2"><span id="multiActions" class="text-xs font-bold bg-blue-900 px-2 py-1 rounded">Wait...</span></div>
-                <button onclick="multiSend('invest')" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-4 border-yellow-500">💰 Investir</button>
-                <button onclick="multiSend('recruit')" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-4 border-red-500">🛡️ Recruter</button>
-                <button onclick="multiSend('spy')" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-4 border-purple-500">👁️ Espionner</button>
+                <button onclick="gameSend('eco')" data-action="eco" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-4 border-blue-500">🏗️ Investir</button>
+                <button onclick="gameSend('mil')" data-action="mil" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-4 border-yellow-500">🛡️ Recruter</button>
+                <button onclick="gameSend('stab')" data-action="stab" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-4 border-green-500">📢 Propagande</button>
+                <button onclick="gameSend('spy')" data-action="spy" class="btn bg-slate-700 p-3 rounded w-full text-left border-l-4 border-purple-500">👁️ Espionner</button>
                 
                 <div id="multiAllianceControls" class="mt-4 pt-2 border-t border-slate-700">
                     <!-- Alliance controls here -->
@@ -983,7 +1224,10 @@
 
                 <div class="mt-2 pt-2 border-t border-slate-700 bg-red-900/10 p-2 rounded">
                     <select id="multiTargetSelect" class="w-full bg-slate-900 p-2 rounded mb-2 text-sm border border-red-900"></select>
-                    <button onclick="multiSend('attack')" class="btn btn-danger w-full py-3 rounded font-bold shadow-lg">LANCER ATTAQUE</button>
+                    <div class="grid grid-cols-2 gap-2">
+                         <button onclick="gameSend('attack')" data-action="attack" class="btn btn-danger w-full py-3 rounded font-bold shadow-lg">ATTAQUER</button>
+                         <button onclick="gameSend('sabotage')" data-action="sabotage" class="btn bg-red-800 w-full py-3 rounded font-bold hover:bg-red-700">💣 SABOTER</button>
+                    </div>
                 </div>
             </div>
 
